@@ -6,7 +6,7 @@
     "version": "3.3.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "icon": "./app-icon.png", 85
+    "icon": "./app-icon.png",
     "assetBundlePatterns": [
       "**/*"
     ],
