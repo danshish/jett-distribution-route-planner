@@ -3,7 +3,7 @@ import { Alert, FlatList, Image, Linking, SafeAreaView, ScrollView, StatusBar, S
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
-const logo = <Image source={require("./assets/jett-logo.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
+const logo = <Image source={require("./jett-logo.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
 const C={bg:"#06151d",panel:"#0b2631",panel2:"#103540",green:"#27c653",green2:"#7ad64f",text:"#f4fbf6",muted:"#9bb2b9",line:"#1a414a",blue:"#38a4ff",orange:"#ffad42",red:"#ff5367"};
 const CACHE="@jett_cache_v32", ROUTES="@jett_saved_v32", CURRENT="@jett_current_v32";
 const clean=x=>x.trim().toUpperCase().replace(/\s+/g," ");
