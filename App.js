@@ -14,7 +14,8 @@ export default function App(){
  const [online,setOnline]=useState(true),[screen,setScreen]=useState("home"),[tab,setTab]=useState("Home");
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [query,setQuery]=useState(""),[results,setResults]=useState([]),[busy,setBusy]=useState(false),[chosen,setChosen]=useState(null);
- const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Delivery Route");\n const [mapChoice,setMapChoice]=useState("google");
+ const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Delivery Route");
+ const [mapChoice,setMapChoice]=useState("google");
  useEffect(()=>{(async()=>{try{const [c,r,s,m]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
  useEffect(()=>{AsyncStorage.setItem(CURRENT,JSON.stringify(stops)).catch(()=>{});},[stops]);
  const miles=useMemo(()=>{let n=0;for(let i=1;i<stops.length;i++){const a=cache[stops[i-1].key],b=cache[stops[i].key];if(a&&b)n+=distance(a,b);}return n;},[stops,cache]);
