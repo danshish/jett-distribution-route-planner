@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "Jett Distribution Route Planner",
+    "slug": "jett-distribution-route-planner",
+    "version": "3.3.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.jett.distribution.routeplanner",
+      "versionCode": 7
+    }
+  }
+}
