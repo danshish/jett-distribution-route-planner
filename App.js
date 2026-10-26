@@ -19,7 +19,75 @@ export default function App(){
  useEffect(()=>{(async()=>{try{const [c,r,s,m]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
  useEffect(()=>{AsyncStorage.setItem(CURRENT,JSON.stringify(stops)).catch(()=>{});},[stops]);
  const miles=useMemo(()=>{let n=0;for(let i=1;i<stops.length;i++){const a=cache[stops[i-1].key],b=cache[stops[i].key];if(a&&b)n+=distance(a,b);}return n;},[stops,cache]);
- async function search(){if(!query.trim())return setResults([]);setBusy(true);if(!online){setResults(Object.entries(cache).filter(([k,v])=>(k+" "+(v.displayName||"")).toLowerCase().includes(query.toLowerCase())).map(([k,v])=>({display_name:v.displayName||k,lat:v.lat,lon:v.lon,cached:true})));setBusy(false);return;}try{const r=await fetch("https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=gb&limit=8&q="+encodeURIComponent(query));setResults(await r.json());}catch{setResults([]);Alert.alert("Search unavailable","Check your connection and try again.");}setBusy(false);}
+ async function search(){
+async function search(){
+  const q=query.trim();
+  if(!q)return setResults([]);
+  setBusy(true);
+
+  if(!online){
+    const matches=Object.entries(cache)
+      .filter(([k,v])=>(k+" "+(v.displayName||""))
+      .toLowerCase().includes(q.toLowerCase()))
+      .map(([k,v])=>({
+        display_name:v.displayName||k,
+        lat:v.lat,lon:v.lon,cached:true
+      }));
+    setResults(matches);
+    setBusy(false);
+    if(!matches.length){
+      Alert.alert("Offline","No matching saved address. Connect to the internet and try again.");
+    }
+    return;
+  }
+
+  try{
+    let found=[];
+    try{
+      const url="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=gb&limit=8&q="+encodeURIComponent(q);
+      const response=await fetch(url);
+      if(!response.ok)throw new Error("Primary search failed");
+      found=await response.json();
+    }catch(primaryError){
+      const url="https://photon.komoot.io/api/?limit=8&lang=en&q="+encodeURIComponent(q);
+      const response=await fetch(url);
+      if(!response.ok)throw new Error("Backup search failed");
+      const data=await response.json();
+      found=(data.features||[]).map(feature=>{
+        const p=feature.properties||{};
+        const c=feature.geometry?.coordinates||[];
+        return {
+          display_name:[
+            p.name,p.housenumber,p.street,
+            p.city||p.town||p.village,
+            p.postcode,p.country
+          ].filter(Boolean).join(", "),
+          lat:c[1],lon:c[0],
+          address:{
+            house_name:p.name,
+            house_number:p.housenumber,
+            road:p.street,
+            city:p.city||p.town||p.village,
+            postcode:p.postcode
+          }
+        };
+      }).filter(x=>x.lat!=null&&x.lon!=null);
+    }
+
+    setResults(found);
+    if(!found.length){
+      Alert.alert("No results","Try a fuller house name, street, town or UK postcode.");
+    }
+  }catch(error){
+    setResults([]);
+    Alert.alert(
+      "Search unavailable",
+      "Neither address service responded. Check your connection and try again."
+    );
+  }finally{
+    setBusy(false);
+  }
+}
  async function choose(x){const key=(x.display_name||query).toUpperCase(),coord={lat:Number(x.lat),lon:Number(x.lon),displayName:x.display_name||query};const c={...cache,[key]:coord};setCache(c);await AsyncStorage.setItem(CACHE,JSON.stringify(c));setChosen({...x,key});const a=x.address||{};setLabel(a.house_name||a.house_number?(a.house_name||a.house_number)+(a.road?" "+a.road:""):"");setTown(a.city||a.town||a.village||"");setPc(a.postcode||"");setScreen("details");}
  function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),key:chosen.key,name:label.trim()||chosen.display_name,address:label.trim(),town:town.trim(),postcode:clean(pc),done:false}]);setChosen(null);setScreen("route");setTab("Route");}
  function saveRoute(){if(!stops.length)return Alert.alert("No stops","Add addresses before saving.");const item={id:Date.now().toString(),name:routeName,stops,miles,savedAt:new Date().toISOString()};const r=[item,...saved].slice(0,30);setSaved(r);AsyncStorage.setItem(ROUTES,JSON.stringify(r));Alert.alert("Route saved","Available offline on this phone.");}
