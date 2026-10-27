@@ -70,7 +70,7 @@ async function search(){
             postcode:p.postcode
           }
         };
-      }).filter(x=>x.lat!=null&&x.lon!=null);
+      }).filter(x=>x.lat!=null&&x.lon!=null&&x.display_name.toLowerCase().includes("united kingdom"));
     }
 
     setResults(found);
