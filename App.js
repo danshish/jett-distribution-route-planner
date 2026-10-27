@@ -49,20 +49,20 @@ async function search(){
       
 found=await response.json();
 const postcode=(q.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i)||[])[0];
-const houseNumber=(q.match(/^\s*(\d+[A-Z]?)\b/)||[])[1];
+const houseNumber=(q.match(/^\s*(\d+[A-Z]?)\b/)||[])[1]; 
 found.sort((a,b)=>{
-const score=x=>{
-const name=(x.display_name||"").toLowerCase();
-const addr=x.address||{};
-let n=0;
-if(postcode&&(addr.postcode||"").replace(/\s/g,"").toLowerCase()===postcode.replace(/\s/g,"").toLowerCase())n+=100;
-if(houseNumber&&addr.house_number===houseNumber)n+=50;
-if(q.toLowerCase().includes("nelson road north")&&name.includes("nelson road north"))n+=20;
-return n;
-};
-return score(b)-score(a);
+  const score=x=>{
+    const name=(x.display_name||"").toLowerCase();
+    const addr=x.address||{};
+    let n=0;
+    if(postcode&&((addr.postcode||"").replace(/\s/g,"").toLowerCase()===postcode.replace(/\s/g,"").toLowerCase())) n+=100;
+    if(houseNumber&&String(addr.house_number||"").toLowerCase()===houseNumber.toLowerCase()) n+=50;
+    if(q.toLowerCase().includes("nelson road north")&&name.includes("nelson road north")) n+=20;
+    return n;
+  };
+  return score(b)-score(a);
 });
-     
+    
     }catch(primaryError){
       const url="https://photon.komoot.io/api/?limit=8&lang=en&q="+encodeURIComponent(q);
       const response=await fetch(url);
