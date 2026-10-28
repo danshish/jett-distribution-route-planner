@@ -150,7 +150,7 @@ found.sort((a,b)=>{
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
     {body}
-  </View¥ 
+  </View>
   <View style={{paddingBottom:12,backgroundColor:C.bg}}>
     <Nav/>
   </View>
