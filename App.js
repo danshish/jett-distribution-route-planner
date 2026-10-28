@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Image, Linking, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { Alert, Animated, FlatList, Image, Linking, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
@@ -16,6 +16,19 @@ export default function App(){
  const [query,setQuery]=useState(""),[results,setResults]=useState([]),[busy,setBusy]=useState(false),[chosen,setChosen]=useState(null);
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Delivery Route");
  const [mapChoice,setMapChoice]=useState("google");
+const [splashVisible, setSplashVisible] = useState(true);
+const splashOpacity = useRef(new Animated.Value(1)).current;
+useEffect(() => {
+  const timer = setTimeout(() => {
+    Animated.timing(splashOpacity, {
+      toValue: 0,
+      duration: 650,
+      useNativeDriver: true,
+    }).start(() => setSplashVisible(false));
+  }, 2600);
+
+  return () => clearTimeout(timer);
+}, [splashOpacity]);
  useEffect(()=>{(async()=>{try{const [c,r,s,m]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
  useEffect(()=>{AsyncStorage.setItem(CURRENT,JSON.stringify(stops)).catch(()=>{});},[stops]);
  const miles=useMemo(()=>{let n=0;for(let i=1;i<stops.length;i++){const a=cache[stops[i-1].key],b=cache[stops[i].key];if(a&&b)n+=distance(a,b);}return n;},[stops,cache]);
@@ -137,10 +150,32 @@ found.sort((a,b)=>{
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
     {body}
-  </View>
+  </View¥ 
   <View style={{paddingBottom:12,backgroundColor:C.bg}}>
     <Nav/>
   </View>
+  {splashVisible && (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position:"absolute",
+        top:0,
+        left:0,
+        right:0,
+        bottom:0,
+        backgroundColor:"#000",
+        opacity:splashOpacity,
+        alignItems:"center",
+        justifyContent:"center"
+      }}
+    >
+      <Image
+        source={require("./loading-screen.png")}
+        resizeMode="contain"
+        style={{width:"100%",height:"100%"}}
+      />
+    </Animated.View>
+  )}
 </SafeAreaView>
 }
 const s=StyleSheet.create({
