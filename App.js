@@ -37,7 +37,6 @@ async function search(){
   if(!q){setResults([]);return;}
   setBusy(true);
   setResults([]);
-
   if(!online){
     const norm=x=>(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");
     const matches=Object.entries(cache)
@@ -48,116 +47,69 @@ async function search(){
     if(!matches.length)Alert.alert("Offline","No matching saved address. Connect to the internet and try again.");
     return;
   }
-
   try{
-    const parts=q.split(",").map(x=>x.trim()).filter(Boolean);
-    const first=parts[0]||q;
-    const numberMatch=first.match(/^(\d+[A-Z]?)\s+(.+)$/i);
-    const houseNumber=numberMatch?numberMatch[1].toLowerCase():null;
-    const street=(numberMatch?numberMatch[2]:first).trim();
-    const postcodeMatch=q.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i);
-    const postcode=postcodeMatch?postcodeMatch[0].replace(/\s/g,"").toLowerCase():null;
-    const town=parts.slice(1).find(x=>!/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(x))||"";
-
-    const norm=x=>(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");
-    const tokens=x=>(x||"").toLowerCase().replace(/[.,]/g," ").split(/\s+/).filter(Boolean).map(t=>{
-      const aliases={rd:"road",st:"street",ave:"avenue",av:"avenue",dr:"drive",ln:"lane",cres:"crescent",cl:"close",ter:"terrace",gr:"grove",sq:"square",pl:"place",ct:"court",pde:"parade",n:"north",s:"south",e:"east",w:"west",ne:"northeast",nw:"northwest",se:"southeast",sw:"southwest"};
-      return aliases[t]||t;
-    });
-    const directions=["north","south","east","west","northeast","northwest","southeast","southwest"];
-
-    const streetMatch=(candidateRoad)=>{
-      if(!candidateRoad)return false;
-      const requested=tokens(street),candidate=tokens(candidateRoad);
-      if(requested.join(" ")===candidate.join(" "))return true;
-      const requestedDirections=requested.filter(t=>directions.includes(t));
-      const candidateDirections=candidate.filter(t=>directions.includes(t));
-      if(requestedDirections.length&&candidateDirections.length&&requestedDirections.join(" ")!==candidateDirections.join(" "))return false;
-      const requestedCore=requested.filter(t=>!directions.includes(t));
-      const candidateCore=candidate.filter(t=>!directions.includes(t));
-      return requestedCore.length>0&&requestedCore.join(" ")===candidateCore.join(" ");
-    };
-
-    const matchesRequest=x=>{
-      const a=x.address||{};
-      const number=String(a.house_number||"").trim().toLowerCase();
-      const road=a.road||a.pedestrian||a.residential||a.street||a.path||"";
-      const display=x.display_name||"";
-      if(houseNumber&&number!==houseNumber)return false;
-      if(postcode&&norm(a.postcode)!==postcode)return false;
-      if(street&&!streetMatch(road))return false;
-      if(town){
-        const location=[a.city,a.town,a.village,a.municipality,a.suburb,display].filter(Boolean).join(" ");
-        if(!norm(location).includes(norm(town)))return false;
-      }
-      return true;
-    };
-
-    const base="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=gb&limit=20&accept-language=en";
-    const structured=new URLSearchParams();
-    if(houseNumber)structured.set("street",houseNumber+" "+street);
-    else if(street)structured.set("street",street);
-    if(town)structured.set("city",town);
-    if(postcode)structured.set("postalcode",postcode);
-    if(!houseNumber&&!street)structured.set("q",q);
-
-    let nominatim=[];
-    let photon=[];
-    const requests=await Promise.allSettled([
-      fetch(base+"&"+structured.toString()).then(async response=>response.ok?response.json():[]),
-      fetch("https://photon.komoot.io/api/?limit=20&lang=en&q="+encodeURIComponent(q)).then(async response=>response.ok?response.json():null)
-    ]);
-    if(requests[0].status==="fulfilled"&&Array.isArray(requests[0].value))nominatim=requests[0].value;
-    if(requests[1].status==="fulfilled"&&requests[1].value){
-      photon=(requests[1].value.features||[]).map(feature=>{
-        const p=feature.properties||{};
-        const coordinates=feature.geometry?.coordinates||[];
-        return {
-          display_name:[p.housenumber,p.name,p.street,p.city||p.town||p.village,p.postcode,p.country].filter(Boolean).join(", "),
-          lat:coordinates[1],lon:coordinates[0],
-          address:{
-            house_number:p.housenumber,
-            road:p.street||p.name,
-            city:p.city||p.town||p.village||p.municipality,
-            suburb:p.district,
-            postcode:p.postcode,
-            country:p.country
-          }
-        };
-      }).filter(x=>x.lat!=null&&x.lon!=null);
-    }
-
-    const candidates=[...nominatim,...photon].filter(matchesRequest);
-    const unique=[];
-    const seen=new Set();
-    candidates.forEach(x=>{
-      const key=Number(x.lat).toFixed(6)+","+Number(x.lon).toFixed(6);
-      if(!seen.has(key)){
-        seen.add(key);
-        const requestedRoad=tokens(street).join(" ");
-        const foundRoad=tokens(x.address?.road||"").join(" ");
-        if(street&&foundRoad!==requestedRoad)x.matchNote="The map database uses a slightly different road label. Please check the house and location before adding.";
-        unique.push(x);
-      }
-    });
-
-    setResults(unique);
-    if(!unique.length){
-      Alert.alert(
-        "No verified house match",
-        houseNumber
-          ? "Neither free map source returned this exact house number on the requested road in "+(town||"the requested area")+". Jett has deliberately hidden nearby streets and businesses. Try adding the postcode, or check the spelling of the road."
-          : "No matching UK address was found. Try adding the town or postcode."
-      );
-    }
+    const response=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/search?q="+encodeURIComponent(q));
+    const data=await response.json();
+    if(!response.ok||!data.success)throw new Error(data.error||"Address search failed");
+    const found=(data.results||[]).map(item=>({
+      display_name:item.suggestion||"",
+      udprn:item.udprn,
+      address:{},
+      source:"postio"
+    })).filter(item=>item.display_name&&item.udprn);
+    setResults(found);
+    if(!found.length)Alert.alert("No address found","Postio did not return a matching UK address. Try including the postcode.");
   }catch(error){
     setResults([]);
-    Alert.alert("Search unavailable","Address search could not be completed. Check your connection and try again.");
+    Alert.alert("Search unavailable",error.message||"Jett could not contact the UK address service. Please try again.");
   }finally{
     setBusy(false);
   }
-} async function choose(x){const key=(x.display_name||query).toUpperCase(),coord={lat:Number(x.lat),lon:Number(x.lon),displayName:x.display_name||query};const c={...cache,[key]:coord};setCache(c);await AsyncStorage.setItem(CACHE,JSON.stringify(c));setChosen({...x,key});const a=x.address||{};setLabel(a.house_name||a.house_number?(a.house_name||a.house_number)+(a.road?" "+a.road:""):"");setTown(a.city||a.town||a.village||"");setPc(a.postcode||"");setScreen("details");}
- function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),key:chosen.key,name:label.trim()||chosen.display_name,address:label.trim(),town:town.trim(),postcode:clean(pc),done:false}]);setChosen(null);setScreen("route");setTab("Route");}
+}
+async function choose(x){
+  if(x.cached){
+    const key=(x.display_name||query).toUpperCase();
+    setChosen({...x,key});
+    setLabel(x.display_name||query);
+    setTown("");
+    setPc("");
+    setScreen("details");
+    return;
+  }
+  if(!x.udprn)return Alert.alert("Address unavailable","This result has no UK address identifier.");
+  setBusy(true);
+  try{
+    const response=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/resolve?udprn="+encodeURIComponent(String(x.udprn)));
+    const data=await response.json();
+    if(!response.ok||!data.success||!data.results?.length)throw new Error(data.error||"Could not retrieve full address");
+    const a=data.results[0];
+    const lat=Number(a.latitude),lon=Number(a.longitude);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon))throw new Error("The address record did not include usable coordinates.");
+    const displayName=[a.building_name,a.address_line_1,a.address_line_2,a.post_town||a.district,a.postcode].filter(Boolean).join(", ");
+    const key=displayName.toUpperCase();
+    const coord={lat,lon,displayName};
+    const c={...cache,[key]:coord};
+    setCache(c);
+    await AsyncStorage.setItem(CACHE,JSON.stringify(c));
+    const selected={...x,display_name:displayName,lat,lon,address:{
+      house_number:a.building_number||"",
+      house_name:a.building_name||"",
+      road:a.thoroughfare||"",
+      city:a.post_town||a.district||"",
+      postcode:a.postcode||""
+    },key};
+    setChosen(selected);
+    setLabel([a.building_name,a.address_line_1].filter(Boolean).join(" "));
+    setTown(a.post_town||a.district||"");
+    setPc(a.postcode||"");
+    setScreen("details");
+  }catch(error){
+    Alert.alert("Address lookup failed",error.message||"Could not retrieve this address. Please try again.");
+  }finally{
+    setBusy(false);
+  }
+}
+function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),key:chosen.key,name:label.trim()||chosen.display_name,address:label.trim(),town:town.trim(),postcode:clean(pc),done:false}]);setChosen(null);setScreen("route");setTab("Route");}
  function saveRoute(){if(!stops.length)return Alert.alert("No stops","Add addresses before saving.");const item={id:Date.now().toString(),name:routeName,stops,miles,savedAt:new Date().toISOString()};const r=[item,...saved].slice(0,30);setSaved(r);AsyncStorage.setItem(ROUTES,JSON.stringify(r));Alert.alert("Route saved","Available offline on this phone.");}
  function optimise(){if(stops.some(x=>!cache[x.key]))return Alert.alert("Find locations first","Search each address while online before optimising.");if(stops.length<3)return Alert.alert("Add more stops","Add at least three stops to optimise.");const left=[...stops],out=[left.shift()];while(left.length){const a=cache[out[out.length-1].key];let bi=0,best=Infinity;left.forEach((x,i)=>{const d=distance(a,cache[x.key]);if(d<best){best=d;bi=i;}});out.push(left.splice(bi,1)[0]);}setStops(out);}
  async function setMapPreference(choice){
