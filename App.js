@@ -136,7 +136,7 @@ function openNavigation(stop,routeStops=[stop]){
         }
       },
       {
-        text:"Chrome Browser",
+        text:"Multi Stop Maps",
         onPress:()=>{
           setMapPreference("google");
           if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");
