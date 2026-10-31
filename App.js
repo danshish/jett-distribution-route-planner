@@ -144,17 +144,33 @@ async function search(){
   setMapChoice(choice);
   await AsyncStorage.setItem("@jett_map_choice",choice);
  }
- function openNavigation(stop){
+ 
+function openNavigation(stop){
   const destination=encodeURIComponent(stop.postcode||stop.name||stop.address||"");
-  const prompt=()=>{
-   Alert.alert("Choose navigation app","Which app would you like to use?",
-    {text:"Google Maps",onPress:()=>{setMapPreference("google");Linking.openURL("https://www.google.com/maps/dir/?api=1&destination="+destination).catch(()=>Alert.alert("Unable to open","Google Maps could not be opened."));}},
-    {text:"Apple Maps",onPress:()=>{setMapPreference("apple");Linking.openURL("https://maps.apple.com/?daddr="+destination+"&dirflg=d").catch(()=>Alert.alert("Unable to open","Apple Maps could not be opened on this device."));}},
-    {text:"Cancel",style:"cancel"}
-   ]);
-  };
-  prompt();
- }
+  Alert.alert(
+    "Choose navigation app",
+    "Which app would you like to use?",
+    [
+      {
+        text:"Google Maps",
+        onPress:()=>{
+          setMapPreference("google");
+          Linking.openURL("https://www.google.com/maps/dir/?api=1&destination="+destination)
+            .catch(()=>Alert.alert("Unable to open","Google Maps could not be opened."));
+        }
+      },
+      {
+        text:"Apple Maps",
+        onPress:()=>{
+          setMapPreference("apple");
+          Linking.openURL("https://maps.apple.com/?daddr="+destination+"&dirflg=d")
+            .catch(()=>Alert.alert("Unable to open","Apple Maps could not be opened on this device."));
+        }
+      },
+      {text:"Cancel",style:"cancel"}
+    ]
+  );
+
  const Header=()=> <View style={s.header}><View style={s.brandRow}>{logo}<View><Text style={s.brand}>Jett</Text><Text style={s.brandSmall}>distribution</Text></View></View><View style={s.net}><View style={[s.dot,{backgroundColor:online?C.green:C.red}]}/><Text style={s.netText}>{online?"ONLINE":"OFFLINE"}</Text></View></View>;
  const Button=({title,onPress,outline=false})=><TouchableOpacity onPress={onPress} style={[s.button,outline&&s.outline]}><Text style={[s.buttonText,outline&&s.outlineText]}>{title}</Text></TouchableOpacity>;
  const Nav=()=> <View style={s.nav}>{[["Home","⌂"],["Route","↝"],["Map","⌖"],["Saved","▤"],["Settings","⚙"]].map(([t,i])=><TouchableOpacity key={t} style={s.navItem} onPress={()=>{setTab(t);setScreen(t.toLowerCase());}}><Text style={[s.navIcon,tab===t&&s.active]}>{i}</Text><Text style={[s.navLabel,tab===t&&s.active]}>{t}</Text></TouchableOpacity>)}</View>;
