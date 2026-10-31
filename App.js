@@ -301,40 +301,21 @@ async function importGoogleSheet(){
  
 function openNavigation(stop,routeStops=[stop]){
   const addressFor=x=>[x.address||x.name,x.town,x.postcode].filter(Boolean).join(", ");
-  const destination=encodeURIComponent(addressFor(stop));
-  const intermediate=routeStops.slice(0,-1).map(addressFor).filter(Boolean);
+  const startValue=startPoint?(Number.isFinite(Number(startPoint.lat))&&Number.isFinite(Number(startPoint.lon))?startPoint.lat+","+startPoint.lon:startPoint.displayName):addressFor(routeStops[0]);
+  const origin=encodeURIComponent(startValue);
+  const returning=!!(startPoint&&returnToStart);
+  const destinationValue=returning?(Number.isFinite(Number(startPoint.lat))&&Number.isFinite(Number(startPoint.lon))?startPoint.lat+","+startPoint.lon:startPoint.displayName):addressFor(returning?routeStops[routeStops.length-1]:stop);
+  const destination=encodeURIComponent(destinationValue);
+  const intermediate=(startPoint?routeStops:routeStops.slice(1)).slice(0,returning?routeStops.length:routeStops.length-1).map(addressFor).filter(Boolean);
   const waypoints=intermediate.length?"&waypoints="+encodeURIComponent(intermediate.join("|")):"";
+  const googleUrl="https://www.google.com/maps/dir/?api=1&origin="+origin+"&destination="+destination+waypoints+"&travelmode=driving";
   Alert.alert(
     "Choose navigation app",
-    "Google Maps will navigate all stops in order. Apple Maps will open the final stop only.",
+    "Google Maps will use your selected start, visit the delivery stops in order"+(returning?" and return to the start.":"."),
     [
-      {
-        text:"Google Maps",
-        onPress:()=>{
-          setMapPreference("google");
-          if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");
-          Linking.openURL("https://www.google.com/maps/dir/?api=1&destination="+destination+waypoints+"&travelmode=driving")
-            .catch(()=>Alert.alert("Unable to open","Google Maps could not be opened."));
-        }
-      },
-      {
-        text:"Multi Stop Maps",
-        onPress:()=>{
-          setMapPreference("google");
-          if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");
-          const browserUrl="https://www.google.com/maps/dir/?api=1&destination="+destination+waypoints+"&travelmode=driving";
-          Linking.openURL(browserUrl)
-            .catch(()=>Alert.alert("Unable to open maps","Android could not open the multi-stop directions link. Please check that a browser or Google Maps is installed."));
-        }
-      },
-      {
-        text:"Apple Maps",
-        onPress:()=>{
-          setMapPreference("apple");
-          Linking.openURL("https://maps.apple.com/?daddr="+destination+"&dirflg=d")
-            .catch(()=>Alert.alert("Unable to open","Apple Maps could not be opened on this device."));
-        }
-      },
+      {text:"Google Maps",onPress:()=>{setMapPreference("google");if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");Linking.openURL(googleUrl).catch(()=>Alert.alert("Unable to open","Google Maps could not be opened."));}},
+      {text:"Multi Stop Maps",onPress:()=>{setMapPreference("google");if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");Linking.openURL(googleUrl).catch(()=>Alert.alert("Unable to open maps","Android could not open the multi-stop directions link. Please check that a browser or Google Maps is installed."));}},
+      {text:"Apple Maps",onPress:()=>{setMapPreference("apple");const appleUrl="https://maps.apple.com/?saddr="+origin+"&daddr="+destination+(intermediate.length?"&waypoints="+encodeURIComponent(intermediate.join("|")):"")+"&dirflg=d";Linking.openURL(appleUrl).catch(()=>Alert.alert("Unable to open","Apple Maps could not be opened on this device."));}},
       {text:"Cancel",style:"cancel"}
     ]
   );
