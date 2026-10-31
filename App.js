@@ -136,6 +136,16 @@ function openNavigation(stop,routeStops=[stop]){
         }
       },
       {
+        text:"Chrome Browser",
+        onPress:()=>{
+          setMapPreference("google");
+          if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");
+          const browserUrl="intent://www.google.com/maps/dir/?api=1&destination="+destination+waypoints+"&travelmode=driving#Intent;scheme=https;package=com.android.chrome;end";
+          Linking.openURL(browserUrl)
+            .catch(()=>Alert.alert("Unable to open Chrome","Chrome could not be opened. Please check that it is installed."));
+        }
+      },
+      {
         text:"Apple Maps",
         onPress:()=>{
           setMapPreference("apple");
