@@ -54,64 +54,84 @@ async function search(){
   }
 
   try{
-    let found=[];
+    const parts=q.split(",").map(x=>x.trim()).filter(Boolean);
+    const first=parts[0]||q;
+    const numberMatch=first.match(/^(\d+[A-Z]?)\s+(.+)$/i);
+    const houseNumber=numberMatch?numberMatch[1].toLowerCase():null;
+    const street=(numberMatch?numberMatch[2]:first).trim();
+    const postcodeMatch=q.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i);
+    const postcode=postcodeMatch?postcodeMatch[0].replace(/\s/g,"").toLowerCase():null;
+    const town=parts.slice(1).find(x=>!/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i.test(x))||"";
+    const norm=x=>(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+
+    const matchesRequest=x=>{
+      const a=x.address||{};
+      const road=a.road||a.pedestrian||a.residential||a.street||"";
+      if(houseNumber&&String(a.house_number||"").toLowerCase()!==houseNumber)return false;
+      if(postcode&&norm(a.postcode)!==postcode)return false;
+      if(street&&road&&!(norm(road).includes(norm(street))||norm(street).includes(norm(road))))return false;
+      if(street&&!road&&!norm(x.display_name).includes(norm(street)))return false;
+      if(houseNumber&&!a.house_number)return false;
+      if(postcode&&!a.postcode)return false;
+      return true;
+    };
+
+    let candidates=[];
+    const base="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&country=United%20Kingdom&limit=10";
+    const structured=new URLSearchParams();
+    if(houseNumber)structured.set("street",houseNumber+" "+street);
+    else if(street)structured.set("street",street);
+    if(town)structured.set("city",town);
+    if(postcode)structured.set("postalcode",postcode);
+    if(!houseNumber&&!street)structured.set("q",q);
+
     try{
-      const url="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=gb&limit=8&q="+encodeURIComponent(q);
-      const response=await fetch(url);
-      if(!response.ok)throw new Error("Primary search failed");
-      
-found=await response.json();
-const postcode=(q.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i)||[])[0];
-const houseNumber=(q.match(/^\s*(\d+[A-Z]?)\b/)||[])[1]; 
-found.sort((a,b)=>{
-  const score=x=>{
-    const name=(x.display_name||"").toLowerCase();
-    const addr=x.address||{};
-    let n=0;
-    if(postcode&&((addr.postcode||"").replace(/\s/g,"").toLowerCase()===postcode.replace(/\s/g,"").toLowerCase())) n+=100;
-    if(houseNumber&&String(addr.house_number||"").toLowerCase()===houseNumber.toLowerCase()) n+=50;
-    if(q.toLowerCase().includes("nelson road north")&&name.includes("nelson road north")) n+=20;
-    return n;
-  };
-  return score(b)-score(a);
-});
-    
-    }catch(primaryError){
-      const url="https://photon.komoot.io/api/?limit=8&lang=en&q="+encodeURIComponent(q);
-      const response=await fetch(url);
-      if(!response.ok)throw new Error("Backup search failed");
-      const data=await response.json();
-      found=(data.features||[]).map(feature=>{
-        const p=feature.properties||{};
-        const c=feature.geometry?.coordinates||[];
-        return {
-          display_name:[
-            p.name,p.housenumber,p.street,
-            p.city||p.town||p.village,
-            p.postcode,p.country
-          ].filter(Boolean).join(", "),
-          lat:c[1],lon:c[0],
-          address:{
-            house_name:p.name,
-            house_number:p.housenumber,
-            road:p.street,
-            city:p.city||p.town||p.village,
-            postcode:p.postcode
-          }
-        };
-      }).filter(x=>x.lat!=null&&x.lon!=null&&x.display_name.toLowerCase().includes("united kingdom"));
+      const response=await fetch(base+"&"+structured.toString());
+      if(response.ok)candidates=candidates.concat(await response.json());
+    }catch(e){}
+
+    if(!candidates.some(matchesRequest)){
+      try{
+        const response=await fetch(base+"&q="+encodeURIComponent(q));
+        if(response.ok)candidates=candidates.concat(await response.json());
+      }catch(e){}
+    }
+
+    let found=candidates.filter(matchesRequest);
+
+    if(!found.length){
+      try{
+        const url="https://photon.komoot.io/api/?limit=15&lang=en&q="+encodeURIComponent(q);
+        const response=await fetch(url);
+        if(response.ok){
+          const data=await response.json();
+          const photon=(data.features||[]).map(feature=>{
+            const p=feature.properties||{};
+            const c=feature.geometry?.coordinates||[];
+            return {
+              display_name:[p.housenumber,p.name,p.street,p.city||p.town||p.village,p.postcode,p.country].filter(Boolean).join(", "),
+              lat:c[1],lon:c[0],
+              address:{
+                house_number:p.housenumber,
+                road:p.street,
+                city:p.city||p.town||p.village,
+                postcode:p.postcode,
+                country:p.country
+              }
+            };
+          }).filter(x=>x.lat!=null&&x.lon!=null);
+          found=photon.filter(matchesRequest);
+        }
+      }catch(e){}
     }
 
     setResults(found);
     if(!found.length){
-      Alert.alert("No results","Try a fuller house name, street, town or UK postcode.");
+      Alert.alert("No exact property match","No result matched your requested house number, street and postcode. Jett has hidden nearby streets and businesses rather than showing them as your house.");
     }
   }catch(error){
     setResults([]);
-    Alert.alert(
-      "Search unavailable",
-      "Neither address service responded. Check your connection and try again."
-    );
+    Alert.alert("Search unavailable","Address search could not be completed. Check your connection and try again.");
   }finally{
     setBusy(false);
   }
@@ -127,7 +147,7 @@ found.sort((a,b)=>{
  function openNavigation(stop){
   const destination=encodeURIComponent(stop.postcode||stop.name||stop.address||"");
   const prompt=()=>{
-   Alert.alert("Choose navigation app","Which app would you like to use?",[
+   Alert.alert("Choose navigation app","Which app would you like to use?",
     {text:"Google Maps",onPress:()=>{setMapPreference("google");Linking.openURL("https://www.google.com/maps/dir/?api=1&destination="+destination).catch(()=>Alert.alert("Unable to open","Google Maps could not be opened."));}},
     {text:"Apple Maps",onPress:()=>{setMapPreference("apple");Linking.openURL("https://maps.apple.com/?daddr="+destination+"&dirflg=d").catch(()=>Alert.alert("Unable to open","Apple Maps could not be opened on this device."));}},
     {text:"Cancel",style:"cancel"}
