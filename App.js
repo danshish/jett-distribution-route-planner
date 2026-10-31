@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
-import { Alert, Animated, FlatList, Image, Linking, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Animated, FlatList, Image, Linking, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 
@@ -173,7 +173,7 @@ function openNavigation(stop,routeStops=[stop]){
   <View style={{flex:1}}>
     {body}
   </View>
-  <View style={{paddingBottom:12,backgroundColor:C.bg}}>
+  <View style={{paddingBottom:Platform.OS==="android"?30:12,backgroundColor:C.bg}}>
     <Nav/>
   </View>
   {splashVisible && (
