@@ -5,6 +5,7 @@ import NetInfo from "@react-native-community/netinfo";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx";
+import * as Location from "expo-location";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
 const C={bg:"#06151d",panel:"#0b2631",panel2:"#103540",green:"#27c653",green2:"#7ad64f",text:"#f4fbf6",muted:"#9bb2b9",line:"#1a414a",blue:"#38a4ff",orange:"#ffad42",red:"#ff5367"};
@@ -20,6 +21,10 @@ export default function App(){
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Delivery Route");
  const [mapChoice,setMapChoice]=useState("google");
  const [roadMetrics,setRoadMetrics]=useState(null);
+ const [startPoint,setStartPoint]=useState(null);
+ const [startQuery,setStartQuery]=useState("");
+ const [startResults,setStartResults]=useState([]);
+ const [returnToStart,setReturnToStart]=useState(false);
  const [googleSheetUrl,setGoogleSheetUrl]=useState("");
 const [splashVisible, setSplashVisible] = useState(true);
 const splashOpacity = useRef(new Animated.Value(1)).current;
@@ -37,7 +42,8 @@ useEffect(() => {
  useEffect(()=>{(async()=>{try{const [c,r,s,m]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
  useEffect(()=>{AsyncStorage.setItem(CURRENT,JSON.stringify(stops)).catch(()=>{});},[stops]);
  const miles=useMemo(()=>{let n=0;for(let i=1;i<stops.length;i++){const a=cache[stops[i-1].key],b=cache[stops[i].key];if(a&&b)n+=distance(a,b);}return n;},[stops,cache]);
- const currentRoadMetrics=roadMetrics&&roadMetrics.signature===stops.map(x=>x.id).join("|")?roadMetrics:null;
+ const routeSignature=stops.map(x=>x.id).join("|")+"|"+(startPoint?.key||"first-stop")+"|"+(returnToStart?"return":"one-way");
+ const currentRoadMetrics=roadMetrics&&roadMetrics.signature===routeSignature?roadMetrics:null;
 async function search(){
   const q=query.trim();
   if(!q){setResults([]);return;}
@@ -221,29 +227,72 @@ async function importGoogleSheet(){
 }
 
  function saveRoute(){if(!stops.length)return Alert.alert("No stops","Add addresses before saving.");const item={id:Date.now().toString(),name:routeName,stops,miles,savedAt:new Date().toISOString()};const r=[item,...saved].slice(0,30);setSaved(r);AsyncStorage.setItem(ROUTES,JSON.stringify(r));Alert.alert("Route saved","Available offline on this phone.");}
+ async function useCurrentStart(){
+  try{
+    setBusy(true);
+    const permission=await Location.requestForegroundPermissionsAsync();
+    if(permission.status!=="granted")throw new Error("Location permission was not granted. You can choose a starting address instead.");
+    const position=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.Balanced});
+    const point={lat:position.coords.latitude,lon:position.coords.longitude,displayName:"Current location",key:"current_location"};
+    setStartPoint(point);
+    setRoadMetrics(null);
+    Alert.alert("Starting point set","Jett will start the route from your current location.");
+  }catch(error){Alert.alert("Location unavailable",error.message||"Jett could not get your current location.");}
+  finally{setBusy(false);}
+ }
+ async function searchStartAddress(){
+  const q=startQuery.trim();
+  if(!q)return Alert.alert("Enter a starting address","Type a postcode or address first.");
+  if(!online)return Alert.alert("Internet required","Connect to the internet to search for a starting address.");
+  setBusy(true);setStartResults([]);
+  try{
+    const response=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/search?q="+encodeURIComponent(q));
+    const data=await response.json();
+    if(!response.ok||!data.success)throw new Error(data.error||"Address search failed");
+    const found=(data.results||[]).filter(x=>x.suggestion&&x.udprn).map(x=>({label:x.suggestion,udprn:x.udprn}));
+    setStartResults(found);
+    if(!found.length)Alert.alert("No address found","Try including the postcode.");
+  }catch(error){Alert.alert("Address search failed",error.message||"Could not search for that address.");}
+  finally{setBusy(false);}
+ }
+ async function chooseStartAddress(item){
+  setBusy(true);
+  try{
+    const response=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/resolve?udprn="+encodeURIComponent(String(item.udprn)));
+    const data=await response.json();
+    if(!response.ok||!data.success||!data.results?.length)throw new Error(data.error||"Could not retrieve the address coordinates.");
+    const a=data.results[0],lat=Number(a.latitude),lon=Number(a.longitude);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon))throw new Error("This address has no usable map coordinates.");
+    const displayName=[a.building_name,a.address_line_1,a.address_line_2,a.post_town||a.district,a.postcode].filter(Boolean).join(", ");
+    const point={lat,lon,displayName,key:"start_"+item.udprn};
+    setStartPoint(point);setStartResults([]);setStartQuery(displayName);setRoadMetrics(null);
+    Alert.alert("Starting address set",displayName);
+  }catch(error){Alert.alert("Address lookup failed",error.message||"Could not set that starting address.");}
+  finally{setBusy(false);}
+ }
  async function optimise(){
   if(!online)return Alert.alert("Internet required","Connect to the internet to calculate real road routes.");
   if(stops.length<2)return Alert.alert("Add more stops","Add at least two delivery stops to optimise.");
-  if(stops.some(x=>!cache[x.key]||!Number.isFinite(Number(cache[x.key].lat))||!Number.isFinite(Number(cache[x.key].lon))))return Alert.alert("Find locations first","Search each address while online so Jett has coordinates for every stop.");
+  if(stops.some(x=>!cache[x.key]||!Number.isFinite(Number(cache[x.key].lat))||!Number.isFinite(Number(cache[x.key].lon))))return Alert.alert("Find locations first","Search each delivery address while online so Jett has coordinates for every stop.");
   setBusy(true);
   try{
-    const coordinates=stops.map(x=>{const p=cache[x.key];return Number(p.lon)+","+Number(p.lat);}).join(";");
-    const url="https://router.project-osrm.org/trip/v1/driving/"+coordinates+"?roundtrip=false&source=first&destination=last&overview=false&steps=false";
+    const first=startPoint||cache[stops[0].key];
+    const points=[first,...stops.map(x=>cache[x.key])];
+    const coordinates=points.map(p=>Number(p.lon)+","+Number(p.lat)).join(";");
+    const roundtrip=returnToStart?"true":"false";
+    const destination=returnToStart?"":"&destination=any";
+    const url="https://router.project-osrm.org/trip/v1/driving/"+coordinates+"?roundtrip="+roundtrip+"&source=first"+destination+"&overview=false&steps=false";
     const response=await fetch(url);
     const data=await response.json();
     if(!response.ok||data.code!=="Ok"||!data.trips?.length||!data.waypoints?.length)throw new Error(data.message||"The road-routing service could not calculate this route.");
-    const ordered=[...data.waypoints].sort((a,b)=>a.waypoint_index-b.waypoint_index).map(w=>stops[w.waypoint_index===undefined?0:data.waypoints.indexOf(w)]);
+    const ordered=[...data.waypoints].map((w,i)=>({w,i})).sort((a,b)=>a.w.waypoint_index-b.w.waypoint_index).map(x=>x.i).filter(i=>i>0).map(i=>stops[i-1]);
     if(ordered.length!==stops.length)throw new Error("The routing service returned an incomplete stop order.");
-    const trip=data.trips[0];
-    const metrics={signature:ordered.map(x=>x.id).join("|"),miles:trip.distance/1609.344,minutes:Math.round(trip.duration/60)};
-    setStops(ordered);
-    setRoadMetrics(metrics);
-    Alert.alert("Road route optimised","Jett has arranged your stops using the road network. Estimated driving: "+metrics.miles.toFixed(1)+" miles · "+fmt(metrics.minutes)+".");
-  }catch(error){
-    Alert.alert("Route calculation failed",error.message||"Jett could not calculate the road route. Please try again.");
-  }finally{
-    setBusy(false);
-  }
+    const trip=data.trips[0],signature=ordered.map(x=>x.id).join("|")+"|"+(startPoint?.key||"first-stop")+"|"+(returnToStart?"return":"one-way");
+    const metrics={signature,miles:trip.distance/1609.344,minutes:Math.round(trip.duration/60)};
+    setStops(ordered);setRoadMetrics(metrics);
+    Alert.alert("Road route optimised","Start: "+(startPoint?.displayName||"first delivery")+"\\n"+(returnToStart?"Return to start included.":"One-way route.")+"\\nEstimated driving: "+metrics.miles.toFixed(1)+" miles · "+fmt(metrics.minutes)+".");
+  }catch(error){Alert.alert("Route calculation failed",error.message||"Jett could not calculate the road route. Please try again.");}
+  finally{setBusy(false);}
  }
  async function setMapPreference(choice){
   setMapChoice(choice);
@@ -296,7 +345,7 @@ function openNavigation(stop,routeStops=[stop]){
  const home=()=> <ScrollView contentContainerStyle={s.content}><Header/><View style={s.hero}><View style={s.logoMark}><Text style={s.logoGlyph}>↻</Text><Text style={s.uk}>UK</Text></View><Text style={s.heroTitle}>Route Planner</Text><Text style={s.pill}>VERSION 3.2</Text><Text style={s.sub}>Delivering, reusing & recycling{"\n"}for Local Authorities</Text></View><Button title="⌕   Find a House / Address" onPress={()=>{setScreen("search");setTab("Home");}}/><Button title="▤   Import Excel / CSV Delivery List" onPress={importDeliveryFile} outline/><TextInput style={s.input} value={googleSheetUrl} onChangeText={setGoogleSheetUrl} autoCapitalize="none" placeholder="Paste Google Sheets link here" placeholderTextColor="#78939b"/><Button title="Import Google Sheet" onPress={importGoogleSheet} outline/><View style={s.two}><TouchableOpacity style={s.tile} onPress={()=>{setScreen("route");setTab("Route");}}><Text style={s.tileIcon}>↝</Text><Text style={s.tileTitle}>Plan a Route</Text><Text style={s.small}>Manage delivery stops</Text></TouchableOpacity><TouchableOpacity style={s.tile} onPress={()=>{setScreen("saved");setTab("Saved");}}><Text style={s.tileIcon}>▤</Text><Text style={s.tileTitle}>Saved Routes</Text><Text style={s.small}>{saved.length} saved on phone</Text></TouchableOpacity></View><View style={s.card}><Text style={s.cardTitle}>YOUR DELIVERY TOOLS</Text>{["House name & full address finder","Automatic stop ordering","Delivery status tracking","Offline cached locations"].map(x=><Text key={x} style={s.feature}>✓  {x}</Text>)}</View>{!online&&<View style={s.notice}><Text style={s.greenText}>✓ Working offline</Text><Text style={s.small}>Saved routes and previously found addresses remain available.</Text></View>}</ScrollView>;
  const searchScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>House Name Finder</Text><Text style={s.small}>Search by house name, number, street, town or postcode.</Text><View style={s.search}><Text style={s.searchGlyph}>⌕</Text><TextInput style={s.searchInput} placeholder="e.g. Rose Cottage, High Street..." placeholderTextColor="#78939b" value={query} onChangeText={setQuery} onSubmitEditing={search}/><TouchableOpacity onPress={search}><Text style={s.searchGo}>GO</Text></TouchableOpacity></View><View style={s.chips}>{["HOUSE NAMES","ADDRESSES","STREETS","POSTCODES"].map(x=><View key={x} style={s.chip}><Text style={s.chipText}>{x}</Text></View>)}</View><Text style={s.small}>Examples: Rose Cottage · 25 High Street · NR30 1JJ</Text>{busy&&<Text style={s.small}>Searching addresses…</Text>}{results.map((x,i)=><TouchableOpacity key={i} style={s.result} onPress={()=>choose(x)}><View style={s.houseIcon}><Text style={{color:C.green,fontSize:22}}>⌂</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.address?.house_name||x.address?.house_number||"Address result"}</Text><Text style={s.small}>{x.display_name}</Text>{x.matchNote&&<Text style={s.small}>{x.matchNote}</Text>}{x.cached&&<Text style={s.greenText}>Cached for offline use</Text>}</View><Text style={s.arrow}>›</Text></TouchableOpacity>)}</ScrollView>;
  const details=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Address Details</Text><View style={s.card}><Text style={s.bigHouse}>⌂</Text><Text style={s.cardTitle}>{label||chosen?.display_name}</Text><Text style={s.small}>{chosen?.display_name}</Text><TextInput style={s.input} placeholder="House name / number + street" placeholderTextColor="#78939b" value={label} onChangeText={setLabel}/><TextInput style={s.input} placeholder="Town / city" placeholderTextColor="#78939b" value={town} onChangeText={setTown}/><TextInput style={s.input} placeholder="Postcode" placeholderTextColor="#78939b" value={pc} onChangeText={setPc}/><Button title="＋  Add to Route" onPress={add}/><Button title="Back to results" outline onPress={()=>setScreen("search")}/></View></ScrollView>;
- const route=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Route Summary</Text><View style={s.stats}><View><Text style={s.stat}>{stops.length}</Text><Text style={s.small}>STOPS</Text></View><View><Text style={s.stat}>{currentRoadMetrics?currentRoadMetrics.miles.toFixed(1):miles.toFixed(1)}</Text><Text style={s.small}>{currentRoadMetrics?"ROAD MILES":"STRAIGHT MILES*"}</Text></View><View><Text style={s.stat}>{currentRoadMetrics?fmt(currentRoadMetrics.minutes):fmt(Math.round(miles/28*60))}</Text><Text style={s.small}>{currentRoadMetrics?"EST. DRIVE":"EST. DRIVE*"}</Text></View></View><Text style={s.foot}>{currentRoadMetrics?"Road distance and drive time estimated from OpenStreetMap road routing. Traffic and delivery time are not included.":"*Before road optimisation: approximate straight-line estimate from saved coordinates."}</Text><Button title={busy?"Calculating road route…":"↝  Optimise Road Route"} onPress={optimise} disabled={busy}/><Button title="▤  Import Excel / CSV Delivery List" onPress={importDeliveryFile} outline/><TextInput style={s.input} value={googleSheetUrl} onChangeText={setGoogleSheetUrl} autoCapitalize="none" placeholder="Paste Google Sheets link here" placeholderTextColor="#78939b"/><Button title="Import Google Sheet" onPress={importGoogleSheet} outline/><View style={s.card}><Text style={s.cardTitle}>DELIVERY STOPS</Text>{stops.length===0&&<Text style={s.small}>No stops yet. Use House Name Finder to add an address.</Text>}{stops.map((x,i)=><View key={x.id} style={s.stop}><View style={s.number}><Text style={s.numberText}>{i+1}</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.town} {x.postcode}</Text><Text style={[s.small,{color:x.done?C.green:C.orange}]}>{x.done?"✓ Delivered":"● Pending"}</Text></View><TouchableOpacity onPress={()=>setStops(stops.map(y=>y.id===x.id?{...y,done:!y.done}:y))}><Text style={s.action}>{x.done?"UNDO":"DONE"}</Text></TouchableOpacity><TouchableOpacity onPress={()=>setStops(stops.filter(y=>y.id!==x.id))}><Text style={s.delete}>×</Text></TouchableOpacity></View>)}</View><TextInput style={s.input} value={routeName} onChangeText={setRouteName} placeholder="Route name" placeholderTextColor="#78939b"/><View style={s.two}><View style={{flex:1}}><Button title="▤  Save Route" onPress={saveRoute} outline/></View><View style={{flex:1}}><Button title="➤  Navigate" onPress={()=>{if(!stops.length)return;const x=stops[stops.length-1];openNavigation(x,stops);}}/></View></View></ScrollView>;
+ const route=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Route Summary</Text><View style={s.stats}><View><Text style={s.stat}>{stops.length}</Text><Text style={s.small}>STOPS</Text></View><View><Text style={s.stat}>{currentRoadMetrics?currentRoadMetrics.miles.toFixed(1):miles.toFixed(1)}</Text><Text style={s.small}>{currentRoadMetrics?"ROAD MILES":"STRAIGHT MILES*"}</Text></View><View><Text style={s.stat}>{currentRoadMetrics?fmt(currentRoadMetrics.minutes):fmt(Math.round(miles/28*60))}</Text><Text style={s.small}>{currentRoadMetrics?"EST. DRIVE":"EST. DRIVE*"}</Text></View></View><Text style={s.foot}>{currentRoadMetrics?"Road distance and drive time estimated from OpenStreetMap road routing. Traffic and delivery time are not included.":"*Before road optimisation: approximate straight-line estimate from saved coordinates."}</Text><View style={s.card}><Text style={s.cardTitle}>ROUTE START</Text><Text style={s.small}>{startPoint?.displayName||"Not selected — Jett will start at the first delivery."}</Text><Button title="◎  Use My Current Location" onPress={useCurrentStart} outline disabled={busy}/><TextInput style={s.input} value={startQuery} onChangeText={setStartQuery} placeholder="Or enter depot / starting address" placeholderTextColor="#78939b"/><Button title="Find Starting Address" onPress={searchStartAddress} outline disabled={busy}/>{startResults.map((item)=><TouchableOpacity key={String(item.udprn)} style={s.result} onPress={()=>chooseStartAddress(item)}><Text style={s.resultTitle}>{item.label}</Text><Text style={s.action}>USE THIS START</Text></TouchableOpacity>)}<TouchableOpacity style={s.preference} onPress={()=>{setReturnToStart(!returnToStart);setRoadMetrics(null);}}><Text style={s.resultTitle}>{returnToStart?"☑":"□"} Return to starting point</Text></TouchableOpacity></View><Button title={busy?"Calculating road route…":"↝  Optimise Road Route"} onPress={optimise} disabled={busy}/><Button title="▤  Import Excel / CSV Delivery List" onPress={importDeliveryFile} outline/><TextInput style={s.input} value={googleSheetUrl} onChangeText={setGoogleSheetUrl} autoCapitalize="none" placeholder="Paste Google Sheets link here" placeholderTextColor="#78939b"/><Button title="Import Google Sheet" onPress={importGoogleSheet} outline/><View style={s.card}><Text style={s.cardTitle}>DELIVERY STOPS</Text>{stops.length===0&&<Text style={s.small}>No stops yet. Use House Name Finder to add an address.</Text>}{stops.map((x,i)=><View key={x.id} style={s.stop}><View style={s.number}><Text style={s.numberText}>{i+1}</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.town} {x.postcode}</Text><Text style={[s.small,{color:x.done?C.green:C.orange}]}>{x.done?"✓ Delivered":"● Pending"}</Text></View><TouchableOpacity onPress={()=>setStops(stops.map(y=>y.id===x.id?{...y,done:!y.done}:y))}><Text style={s.action}>{x.done?"UNDO":"DONE"}</Text></TouchableOpacity><TouchableOpacity onPress={()=>setStops(stops.filter(y=>y.id!==x.id))}><Text style={s.delete}>×</Text></TouchableOpacity></View>)}</View><TextInput style={s.input} value={routeName} onChangeText={setRouteName} placeholder="Route name" placeholderTextColor="#78939b"/><View style={s.two}><View style={{flex:1}}><Button title="▤  Save Route" onPress={saveRoute} outline/></View><View style={{flex:1}}><Button title="➤  Navigate" onPress={()=>{if(!stops.length)return;const x=stops[stops.length-1];openNavigation(x,stops);}}/></View></View></ScrollView>;
  const savedScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Saved Routes</Text>{saved.length===0?<View style={s.card}><Text style={s.small}>No saved routes yet. Save a route to keep it on your phone.</Text></View>:saved.map(r=><View key={r.id} style={s.card}><Text style={s.cardTitle}>{r.name}</Text><Text style={s.small}>{r.stops.length} stops · {Number(r.miles||0).toFixed(1)} miles</Text><Button title="Load Route" onPress={()=>{setStops(r.stops);setScreen("route");setTab("Route");}}/></View>)}</ScrollView>;
  const settingsScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Navigation Settings</Text><View style={s.card}><Text style={s.cardTitle}>Preferred map app</Text><Text style={s.small}>Choose which app to use when you start a route. You can also choose each time you navigate.</Text>{[["google","Google Maps"],["apple","Apple Maps"]].map(([v,t])=><TouchableOpacity key={v} style={s.preference} onPress={()=>setMapPreference(v)}><View style={[s.radio,{borderColor:mapChoice===v?C.green:C.muted}]}>{mapChoice===v&&<View style={s.radioInner}/>}</View><View style={{flex:1}}><Text style={s.resultTitle}>{t}</Text><Text style={s.small}>{v==="google"?"Works on Android and iPhone":"Available on Apple devices; on Android this may open in a browser or may not be supported"}</Text></View></TouchableOpacity>)}<Button title="Ask me every time" onPress={()=>setMapPreference("ask") } outline/><Text style={[s.small,{marginTop:10}]}>Note: Apple Maps is not normally installed on Android phones. On your Moto G17, Google Maps is the reliable option; Apple Maps links may open in a browser or may not work as expected.</Text></View></ScrollView>;
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Route Map</Text><View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>{online?"Map preview":"Offline locations"}</Text><Text style={s.small}>{online?"Open the route in Google Maps for live map tiles and turn-by-turn directions.":"Map tiles need internet, but cached stop details remain available."}</Text><Button title="Open Google Maps" onPress={()=>{if(stops.length){const a=stops.map(x=>x.postcode||x.name).join("/");openNavigation(stops[stops.length-1],stops);}else Alert.alert("No stops","Add stops first.");}}/></View>{stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}</ScrollView>;
