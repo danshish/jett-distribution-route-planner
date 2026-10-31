@@ -118,7 +118,7 @@ function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),ke
  }
  
 function openNavigation(stop){
-  const destination=encodeURIComponent(stop.postcode||stop.name||stop.address||"");
+  const destination=encodeURIComponent([stop.address||stop.name,stop.town,stop.postcode].filter(Boolean).join(", "));
   Alert.alert(
     "Choose navigation app",
     "Which app would you like to use?",
