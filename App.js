@@ -34,22 +34,18 @@ useEffect(() => {
  const miles=useMemo(()=>{let n=0;for(let i=1;i<stops.length;i++){const a=cache[stops[i-1].key],b=cache[stops[i].key];if(a&&b)n+=distance(a,b);}return n;},[stops,cache]);
 async function search(){
   const q=query.trim();
-  if(!q)return setResults([]);
+  if(!q){setResults([]);return;}
   setBusy(true);
+  setResults([]);
 
   if(!online){
+    const norm=x=>(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");
     const matches=Object.entries(cache)
-      .filter(([k,v])=>(k+" "+(v.displayName||""))
-      .toLowerCase().includes(q.toLowerCase()))
-      .map(([k,v])=>({
-        display_name:v.displayName||k,
-        lat:v.lat,lon:v.lon,cached:true
-      }));
+      .filter(([k,v])=>norm(k+" "+(v.displayName||"")).includes(norm(q)))
+      .map(([k,v])=>({display_name:v.displayName||k,lat:v.lat,lon:v.lon,cached:true}));
     setResults(matches);
     setBusy(false);
-    if(!matches.length){
-      Alert.alert("Offline","No matching saved address. Connect to the internet and try again.");
-    }
+    if(!matches.length)Alert.alert("Offline","No matching saved address. Connect to the internet and try again.");
     return;
   }
 
@@ -59,25 +55,45 @@ async function search(){
     const numberMatch=first.match(/^(\d+[A-Z]?)\s+(.+)$/i);
     const houseNumber=numberMatch?numberMatch[1].toLowerCase():null;
     const street=(numberMatch?numberMatch[2]:first).trim();
-    const postcodeMatch=q.match(/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i);
+    const postcodeMatch=q.match(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i);
     const postcode=postcodeMatch?postcodeMatch[0].replace(/\s/g,"").toLowerCase():null;
-    const town=parts.slice(1).find(x=>!/[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}/i.test(x))||"";
+    const town=parts.slice(1).find(x=>!/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(x))||"";
+
     const norm=x=>(x||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+    const tokens=x=>(x||"").toLowerCase().replace(/[.,]/g," ").split(/\s+/).filter(Boolean).map(t=>{
+      const aliases={rd:"road",st:"street",ave:"avenue",av:"avenue",dr:"drive",ln:"lane",cres:"crescent",cl:"close",ter:"terrace",gr:"grove",sq:"square",pl:"place",ct:"court",pde:"parade",n:"north",s:"south",e:"east",w:"west",ne:"northeast",nw:"northwest",se:"southeast",sw:"southwest"};
+      return aliases[t]||t;
+    });
+    const directions=["north","south","east","west","northeast","northwest","southeast","southwest"];
+
+    const streetMatch=(candidateRoad)=>{
+      if(!candidateRoad)return false;
+      const requested=tokens(street),candidate=tokens(candidateRoad);
+      if(requested.join(" ")===candidate.join(" "))return true;
+      const requestedDirections=requested.filter(t=>directions.includes(t));
+      const candidateDirections=candidate.filter(t=>directions.includes(t));
+      if(requestedDirections.length&&candidateDirections.length&&requestedDirections.join(" ")!==candidateDirections.join(" "))return false;
+      const requestedCore=requested.filter(t=>!directions.includes(t));
+      const candidateCore=candidate.filter(t=>!directions.includes(t));
+      return requestedCore.length>0&&requestedCore.join(" ")===candidateCore.join(" ");
+    };
 
     const matchesRequest=x=>{
       const a=x.address||{};
-      const road=a.road||a.pedestrian||a.residential||a.street||"";
-      if(houseNumber&&String(a.house_number||"").toLowerCase()!==houseNumber)return false;
+      const number=String(a.house_number||"").trim().toLowerCase();
+      const road=a.road||a.pedestrian||a.residential||a.street||a.path||"";
+      const display=x.display_name||"";
+      if(houseNumber&&number!==houseNumber)return false;
       if(postcode&&norm(a.postcode)!==postcode)return false;
-      if(street&&road&&!(norm(road).includes(norm(street))||norm(street).includes(norm(road))))return false;
-      if(street&&!road&&!norm(x.display_name).includes(norm(street)))return false;
-      if(houseNumber&&!a.house_number)return false;
-      if(postcode&&!a.postcode)return false;
+      if(street&&!streetMatch(road))return false;
+      if(town){
+        const location=[a.city,a.town,a.village,a.municipality,a.suburb,display].filter(Boolean).join(" ");
+        if(!norm(location).includes(norm(town)))return false;
+      }
       return true;
     };
 
-    let candidates=[];
-    const base="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&country=United%20Kingdom&limit=10";
+    const base="https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=gb&limit=20&accept-language=en";
     const structured=new URLSearchParams();
     if(houseNumber)structured.set("street",houseNumber+" "+street);
     else if(street)structured.set("street",street);
@@ -85,49 +101,54 @@ async function search(){
     if(postcode)structured.set("postalcode",postcode);
     if(!houseNumber&&!street)structured.set("q",q);
 
-    try{
-      const response=await fetch(base+"&"+structured.toString());
-      if(response.ok)candidates=candidates.concat(await response.json());
-    }catch(e){}
-
-    if(!candidates.some(matchesRequest)){
-      try{
-        const response=await fetch(base+"&q="+encodeURIComponent(q));
-        if(response.ok)candidates=candidates.concat(await response.json());
-      }catch(e){}
+    let nominatim=[];
+    let photon=[];
+    const requests=await Promise.allSettled([
+      fetch(base+"&"+structured.toString()).then(async response=>response.ok?response.json():[]),
+      fetch("https://photon.komoot.io/api/?limit=20&lang=en&q="+encodeURIComponent(q)).then(async response=>response.ok?response.json():null)
+    ]);
+    if(requests[0].status==="fulfilled"&&Array.isArray(requests[0].value))nominatim=requests[0].value;
+    if(requests[1].status==="fulfilled"&&requests[1].value){
+      photon=(requests[1].value.features||[]).map(feature=>{
+        const p=feature.properties||{};
+        const coordinates=feature.geometry?.coordinates||[];
+        return {
+          display_name:[p.housenumber,p.name,p.street,p.city||p.town||p.village,p.postcode,p.country].filter(Boolean).join(", "),
+          lat:coordinates[1],lon:coordinates[0],
+          address:{
+            house_number:p.housenumber,
+            road:p.street||p.name,
+            city:p.city||p.town||p.village||p.municipality,
+            suburb:p.district,
+            postcode:p.postcode,
+            country:p.country
+          }
+        };
+      }).filter(x=>x.lat!=null&&x.lon!=null);
     }
 
-    let found=candidates.filter(matchesRequest);
+    const candidates=[...nominatim,...photon].filter(matchesRequest);
+    const unique=[];
+    const seen=new Set();
+    candidates.forEach(x=>{
+      const key=Number(x.lat).toFixed(6)+","+Number(x.lon).toFixed(6);
+      if(!seen.has(key)){
+        seen.add(key);
+        const requestedRoad=tokens(street).join(" ");
+        const foundRoad=tokens(x.address?.road||"").join(" ");
+        if(street&&foundRoad!==requestedRoad)x.matchNote="The map database uses a slightly different road label. Please check the house and location before adding.";
+        unique.push(x);
+      }
+    });
 
-    if(!found.length){
-      try{
-        const url="https://photon.komoot.io/api/?limit=15&lang=en&q="+encodeURIComponent(q);
-        const response=await fetch(url);
-        if(response.ok){
-          const data=await response.json();
-          const photon=(data.features||[]).map(feature=>{
-            const p=feature.properties||{};
-            const c=feature.geometry?.coordinates||[];
-            return {
-              display_name:[p.housenumber,p.name,p.street,p.city||p.town||p.village,p.postcode,p.country].filter(Boolean).join(", "),
-              lat:c[1],lon:c[0],
-              address:{
-                house_number:p.housenumber,
-                road:p.street,
-                city:p.city||p.town||p.village,
-                postcode:p.postcode,
-                country:p.country
-              }
-            };
-          }).filter(x=>x.lat!=null&&x.lon!=null);
-          found=photon.filter(matchesRequest);
-        }
-      }catch(e){}
-    }
-
-    setResults(found);
-    if(!found.length){
-      Alert.alert("No exact property match","No result matched your requested house number, street and postcode. Jett has hidden nearby streets and businesses rather than showing them as your house.");
+    setResults(unique);
+    if(!unique.length){
+      Alert.alert(
+        "No verified house match",
+        houseNumber
+          ? "Neither free map source returned this exact house number on the requested road in "+(town||"the requested area")+". Jett has deliberately hidden nearby streets and businesses. Try adding the postcode, or check the spelling of the road."
+          : "No matching UK address was found. Try adding the town or postcode."
+      );
     }
   }catch(error){
     setResults([]);
@@ -135,8 +156,7 @@ async function search(){
   }finally{
     setBusy(false);
   }
-}
- async function choose(x){const key=(x.display_name||query).toUpperCase(),coord={lat:Number(x.lat),lon:Number(x.lon),displayName:x.display_name||query};const c={...cache,[key]:coord};setCache(c);await AsyncStorage.setItem(CACHE,JSON.stringify(c));setChosen({...x,key});const a=x.address||{};setLabel(a.house_name||a.house_number?(a.house_name||a.house_number)+(a.road?" "+a.road:""):"");setTown(a.city||a.town||a.village||"");setPc(a.postcode||"");setScreen("details");}
+} async function choose(x){const key=(x.display_name||query).toUpperCase(),coord={lat:Number(x.lat),lon:Number(x.lon),displayName:x.display_name||query};const c={...cache,[key]:coord};setCache(c);await AsyncStorage.setItem(CACHE,JSON.stringify(c));setChosen({...x,key});const a=x.address||{};setLabel(a.house_name||a.house_number?(a.house_name||a.house_number)+(a.road?" "+a.road:""):"");setTown(a.city||a.town||a.village||"");setPc(a.postcode||"");setScreen("details");}
  function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),key:chosen.key,name:label.trim()||chosen.display_name,address:label.trim(),town:town.trim(),postcode:clean(pc),done:false}]);setChosen(null);setScreen("route");setTab("Route");}
  function saveRoute(){if(!stops.length)return Alert.alert("No stops","Add addresses before saving.");const item={id:Date.now().toString(),name:routeName,stops,miles,savedAt:new Date().toISOString()};const r=[item,...saved].slice(0,30);setSaved(r);AsyncStorage.setItem(ROUTES,JSON.stringify(r));Alert.alert("Route saved","Available offline on this phone.");}
  function optimise(){if(stops.some(x=>!cache[x.key]))return Alert.alert("Find locations first","Search each address while online before optimising.");if(stops.length<3)return Alert.alert("Add more stops","Add at least three stops to optimise.");const left=[...stops],out=[left.shift()];while(left.length){const a=cache[out[out.length-1].key];let bi=0,best=Infinity;left.forEach((x,i)=>{const d=distance(a,cache[x.key]);if(d<best){best=d;bi=i;}});out.push(left.splice(bi,1)[0]);}setStops(out);}
@@ -175,7 +195,7 @@ function openNavigation(stop){
  const Button=({title,onPress,outline=false})=><TouchableOpacity onPress={onPress} style={[s.button,outline&&s.outline]}><Text style={[s.buttonText,outline&&s.outlineText]}>{title}</Text></TouchableOpacity>;
  const Nav=()=> <View style={s.nav}>{[["Home","⌂"],["Route","↝"],["Map","⌖"],["Saved","▤"],["Settings","⚙"]].map(([t,i])=><TouchableOpacity key={t} style={s.navItem} onPress={()=>{setTab(t);setScreen(t.toLowerCase());}}><Text style={[s.navIcon,tab===t&&s.active]}>{i}</Text><Text style={[s.navLabel,tab===t&&s.active]}>{t}</Text></TouchableOpacity>)}</View>;
  const home=()=> <ScrollView contentContainerStyle={s.content}><Header/><View style={s.hero}><View style={s.logoMark}><Text style={s.logoGlyph}>↻</Text><Text style={s.uk}>UK</Text></View><Text style={s.heroTitle}>Route Planner</Text><Text style={s.pill}>VERSION 3.2</Text><Text style={s.sub}>Delivering, reusing & recycling{"\n"}for Local Authorities</Text></View><Button title="⌕   Find a House / Address" onPress={()=>{setScreen("search");setTab("Home");}}/><View style={s.two}><TouchableOpacity style={s.tile} onPress={()=>{setScreen("route");setTab("Route");}}><Text style={s.tileIcon}>↝</Text><Text style={s.tileTitle}>Plan a Route</Text><Text style={s.small}>Manage delivery stops</Text></TouchableOpacity><TouchableOpacity style={s.tile} onPress={()=>{setScreen("saved");setTab("Saved");}}><Text style={s.tileIcon}>▤</Text><Text style={s.tileTitle}>Saved Routes</Text><Text style={s.small}>{saved.length} saved on phone</Text></TouchableOpacity></View><View style={s.card}><Text style={s.cardTitle}>YOUR DELIVERY TOOLS</Text>{["House name & full address finder","Automatic stop ordering","Delivery status tracking","Offline cached locations"].map(x=><Text key={x} style={s.feature}>✓  {x}</Text>)}</View>{!online&&<View style={s.notice}><Text style={s.greenText}>✓ Working offline</Text><Text style={s.small}>Saved routes and previously found addresses remain available.</Text></View>}</ScrollView>;
- const searchScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>House Name Finder</Text><Text style={s.small}>Search by house name, number, street, town or postcode.</Text><View style={s.search}><Text style={s.searchGlyph}>⌕</Text><TextInput style={s.searchInput} placeholder="e.g. Rose Cottage, High Street..." placeholderTextColor="#78939b" value={query} onChangeText={setQuery} onSubmitEditing={search}/><TouchableOpacity onPress={search}><Text style={s.searchGo}>GO</Text></TouchableOpacity></View><View style={s.chips}>{["HOUSE NAMES","ADDRESSES","STREETS","POSTCODES"].map(x=><View key={x} style={s.chip}><Text style={s.chipText}>{x}</Text></View>)}</View><Text style={s.small}>Examples: Rose Cottage · 25 High Street · NR30 1JJ</Text>{busy&&<Text style={s.small}>Searching addresses…</Text>}{results.map((x,i)=><TouchableOpacity key={i} style={s.result} onPress={()=>choose(x)}><View style={s.houseIcon}><Text style={{color:C.green,fontSize:22}}>⌂</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.address?.house_name||x.address?.house_number||"Address result"}</Text><Text style={s.small}>{x.display_name}</Text>{x.cached&&<Text style={s.greenText}>Cached for offline use</Text>}</View><Text style={s.arrow}>›</Text></TouchableOpacity>)}</ScrollView>;
+ const searchScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>House Name Finder</Text><Text style={s.small}>Search by house name, number, street, town or postcode.</Text><View style={s.search}><Text style={s.searchGlyph}>⌕</Text><TextInput style={s.searchInput} placeholder="e.g. Rose Cottage, High Street..." placeholderTextColor="#78939b" value={query} onChangeText={setQuery} onSubmitEditing={search}/><TouchableOpacity onPress={search}><Text style={s.searchGo}>GO</Text></TouchableOpacity></View><View style={s.chips}>{["HOUSE NAMES","ADDRESSES","STREETS","POSTCODES"].map(x=><View key={x} style={s.chip}><Text style={s.chipText}>{x}</Text></View>)}</View><Text style={s.small}>Examples: Rose Cottage · 25 High Street · NR30 1JJ</Text>{busy&&<Text style={s.small}>Searching addresses…</Text>}{results.map((x,i)=><TouchableOpacity key={i} style={s.result} onPress={()=>choose(x)}><View style={s.houseIcon}><Text style={{color:C.green,fontSize:22}}>⌂</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.address?.house_name||x.address?.house_number||"Address result"}</Text><Text style={s.small}>{x.display_name}</Text>{x.matchNote&&<Text style={s.small}>{x.matchNote}</Text>}{x.cached&&<Text style={s.greenText}>Cached for offline use</Text>}</View><Text style={s.arrow}>›</Text></TouchableOpacity>)}</ScrollView>;
  const details=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Address Details</Text><View style={s.card}><Text style={s.bigHouse}>⌂</Text><Text style={s.cardTitle}>{label||chosen?.display_name}</Text><Text style={s.small}>{chosen?.display_name}</Text><TextInput style={s.input} placeholder="House name / number + street" placeholderTextColor="#78939b" value={label} onChangeText={setLabel}/><TextInput style={s.input} placeholder="Town / city" placeholderTextColor="#78939b" value={town} onChangeText={setTown}/><TextInput style={s.input} placeholder="Postcode" placeholderTextColor="#78939b" value={pc} onChangeText={setPc}/><Button title="＋  Add to Route" onPress={add}/><Button title="Back to results" outline onPress={()=>setScreen("search")}/></View></ScrollView>;
  const route=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Route Summary</Text><View style={s.stats}><View><Text style={s.stat}>{stops.length}</Text><Text style={s.small}>STOPS</Text></View><View><Text style={s.stat}>{miles.toFixed(1)}</Text><Text style={s.small}>MILES*</Text></View><View><Text style={s.stat}>{fmt(Math.round(miles/28*60))}</Text><Text style={s.small}>EST. DRIVE*</Text></View></View><Text style={s.foot}>*Approximate straight-line estimate from cached locations.</Text><Button title="↝  Optimise Stop Order" onPress={optimise}/><View style={s.card}><Text style={s.cardTitle}>DELIVERY STOPS</Text>{stops.length===0&&<Text style={s.small}>No stops yet. Use House Name Finder to add an address.</Text>}{stops.map((x,i)=><View key={x.id} style={s.stop}><View style={s.number}><Text style={s.numberText}>{i+1}</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.town} {x.postcode}</Text><Text style={[s.small,{color:x.done?C.green:C.orange}]}>{x.done?"✓ Delivered":"● Pending"}</Text></View><TouchableOpacity onPress={()=>setStops(stops.map(y=>y.id===x.id?{...y,done:!y.done}:y))}><Text style={s.action}>{x.done?"UNDO":"DONE"}</Text></TouchableOpacity><TouchableOpacity onPress={()=>setStops(stops.filter(y=>y.id!==x.id))}><Text style={s.delete}>×</Text></TouchableOpacity></View>)}</View><TextInput style={s.input} value={routeName} onChangeText={setRouteName} placeholder="Route name" placeholderTextColor="#78939b"/><View style={s.two}><View style={{flex:1}}><Button title="▤  Save Route" onPress={saveRoute} outline/></View><View style={{flex:1}}><Button title="➤  Navigate" onPress={()=>{if(!stops.length)return;const x=stops[stops.length-1];openNavigation(x);}}/></View></View></ScrollView>;
  const savedScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Saved Routes</Text>{saved.length===0?<View style={s.card}><Text style={s.small}>No saved routes yet. Save a route to keep it on your phone.</Text></View>:saved.map(r=><View key={r.id} style={s.card}><Text style={s.cardTitle}>{r.name}</Text><Text style={s.small}>{r.stops.length} stops · {Number(r.miles||0).toFixed(1)} miles</Text><Button title="Load Route" onPress={()=>{setStops(r.stops);setScreen("route");setTab("Route");}}/></View>)}</ScrollView>;
