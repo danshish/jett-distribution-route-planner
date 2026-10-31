@@ -276,8 +276,8 @@ async function importGoogleSheet(){
   if(stops.some(x=>!cache[x.key]||!Number.isFinite(Number(cache[x.key].lat))||!Number.isFinite(Number(cache[x.key].lon))))return Alert.alert("Find locations first","Search each delivery address while online so Jett has coordinates for every stop.");
   setBusy(true);
   try{
-    const first=startPoint||cache[stops[0].key];
-    const points=[first,...stops.map(x=>cache[x.key])];
+    const points=startPoint?[startPoint,...stops.map(x=>cache[x.key])]:stops.map(x=>cache[x.key]);
+    const stopOffset=startPoint?1:0;
     const coordinates=points.map(p=>Number(p.lon)+","+Number(p.lat)).join(";");
     const roundtrip=returnToStart?"true":"false";
     const destination=returnToStart?"":"&destination=any";
@@ -285,7 +285,7 @@ async function importGoogleSheet(){
     const response=await fetch(url);
     const data=await response.json();
     if(!response.ok||data.code!=="Ok"||!data.trips?.length||!data.waypoints?.length)throw new Error(data.message||"The road-routing service could not calculate this route.");
-    const ordered=[...data.waypoints].map((w,i)=>({w,i})).sort((a,b)=>a.w.waypoint_index-b.w.waypoint_index).map(x=>x.i).filter(i=>i>0).map(i=>stops[i-1]);
+    const ordered=[...data.waypoints].map((w,i)=>({w,i})).sort((a,b)=>a.w.waypoint_index-b.w.waypoint_index).map(x=>x.i).filter(i=>i>=stopOffset).map(i=>stops[i-stopOffset]);
     if(ordered.length!==stops.length)throw new Error("The routing service returned an incomplete stop order.");
     const trip=data.trips[0],signature=ordered.map(x=>x.id).join("|")+"|"+(startPoint?.key||"first-stop")+"|"+(returnToStart?"return":"one-way");
     const metrics={signature,miles:trip.distance/1609.344,minutes:Math.round(trip.duration/60)};
