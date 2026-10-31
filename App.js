@@ -170,7 +170,7 @@ function openNavigation(stop){
       {text:"Cancel",style:"cancel"}
     ]
   );
-
+}
  const Header=()=> <View style={s.header}><View style={s.brandRow}>{logo}<View><Text style={s.brand}>Jett</Text><Text style={s.brandSmall}>distribution</Text></View></View><View style={s.net}><View style={[s.dot,{backgroundColor:online?C.green:C.red}]}/><Text style={s.netText}>{online?"ONLINE":"OFFLINE"}</Text></View></View>;
  const Button=({title,onPress,outline=false})=><TouchableOpacity onPress={onPress} style={[s.button,outline&&s.outline]}><Text style={[s.buttonText,outline&&s.outlineText]}>{title}</Text></TouchableOpacity>;
  const Nav=()=> <View style={s.nav}>{[["Home","⌂"],["Route","↝"],["Map","⌖"],["Saved","▤"],["Settings","⚙"]].map(([t,i])=><TouchableOpacity key={t} style={s.navItem} onPress={()=>{setTab(t);setScreen(t.toLowerCase());}}><Text style={[s.navIcon,tab===t&&s.active]}>{i}</Text><Text style={[s.navLabel,tab===t&&s.active]}>{t}</Text></TouchableOpacity>)}</View>;
