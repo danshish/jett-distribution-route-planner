@@ -306,7 +306,7 @@ function openNavigation(stop,routeStops=[stop]){
   const returning=!!(startPoint&&returnToStart);
   const destinationValue=returning?(Number.isFinite(Number(startPoint.lat))&&Number.isFinite(Number(startPoint.lon))?startPoint.lat+","+startPoint.lon:startPoint.displayName):addressFor(returning?routeStops[routeStops.length-1]:stop);
   const destination=encodeURIComponent(destinationValue);
-  const intermediate=(startPoint?routeStops:routeStops.slice(1)).slice(0,returning?routeStops.length:routeStops.length-1).map(addressFor).filter(Boolean);
+  const intermediate=(startPoint?(returning?routeStops:routeStops.slice(0,-1)):routeStops.slice(1,-1)).map(addressFor).filter(Boolean);
   const waypoints=intermediate.length?"&waypoints="+encodeURIComponent(intermediate.join("|")):"";
   const googleUrl="https://www.google.com/maps/dir/?api=1&origin="+origin+"&destination="+destination+waypoints+"&travelmode=driving";
   Alert.alert(
