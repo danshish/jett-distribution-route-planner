@@ -12,6 +12,9 @@
     "android": {
       "package": "com.jett.distribution.routeplanner",
       "versionCode": 7
-    }
+    },
+    "plugins": [
+      "@maplibre/maplibre-react-native"
+    ]
   }
 }
