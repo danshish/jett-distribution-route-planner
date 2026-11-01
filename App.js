@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Alert, Animated, FlatList, Image, Linking, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase, isSupabaseConfigured } from "./lib/supabase";
 import NetInfo from "@react-native-community/netinfo";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -20,6 +21,8 @@ const distance=(a,b)=>{const r=n=>n*Math.PI/180, d1=r(b.lat-a.lat),d2=r(b.lon-a.
 const fmt=m=>!m?"—":`${Math.floor(m/60)?Math.floor(m/60)+"h ":""}${m%60}m`;
 export default function App(){
  const [online,setOnline]=useState(true),[screen,setScreen]=useState("home"),[tab,setTab]=useState("Home");
+ const [authSession,setAuthSession]=useState(null),[authLoading,setAuthLoading]=useState(true);
+ const [authMode,setAuthMode]=useState("signin"),[authEmail,setAuthEmail]=useState(""),[authPassword,setAuthPassword]=useState(""),[authName,setAuthName]=useState(""),[authBusy,setAuthBusy]=useState(false);
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [stockLoaded,setStockLoaded]=useState({wheelieBins:0,foodCaddies:0});
  const [drivers,setDrivers]=useState([]);
@@ -68,6 +71,43 @@ useEffect(() => {
   return () => clearTimeout(timer);
 }, [splashOpacity]);
  useEffect(()=>{(async()=>{try{const [c,r,s,m,l]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
+ useEffect(()=>{
+  if(!isSupabaseConfigured){setAuthLoading(false);return;}
+  let mounted=true;
+  supabase.auth.getSession().then(({data,error})=>{
+    if(mounted){if(error)console.warn("Supabase session check:",error.message);setAuthSession(data?.session||null);setAuthLoading(false);}
+  }).catch(error=>{if(mounted){console.warn("Supabase session check:",error.message);setAuthLoading(false);}});
+  const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{
+    if(mounted)setAuthSession(session||null);
+  });
+  return ()=>{mounted=false;subscription.unsubscribe();};
+ },[]);
+ async function submitAuth(){
+  if(!isSupabaseConfigured||!supabase)return Alert.alert("Connection not configured","The Supabase project URL and publishable key are missing from this build.");
+  const email=authEmail.trim().toLowerCase();
+  if(!email||!authPassword)return Alert.alert("Complete the form","Enter your email address and password.");
+  if(authPassword.length<8)return Alert.alert("Password too short","Use at least 8 characters.");
+  if(authMode==="signup"&&!authName.trim())return Alert.alert("Enter your name","Please enter your full name.");
+  setAuthBusy(true);
+  try{
+   if(authMode==="signup"){
+    const {data,error}=await supabase.auth.signUp({email,password:authPassword,options:{data:{full_name:authName.trim()}}});
+    if(error)throw error;
+    if(data.session){setAuthSession(data.session);Alert.alert("Account created","Your Jett Pal account is ready. Your company workspace will be set up next.");}
+    else Alert.alert("Check your email","Supabase has sent a confirmation link. Confirm your email, then return here and sign in.");
+   }else{
+    const {data,error}=await supabase.auth.signInWithPassword({email,password:authPassword});
+    if(error)throw error;
+    setAuthSession(data.session||null);
+   }
+  }catch(error){Alert.alert(authMode==="signup"?"Sign-up failed":"Sign-in failed",error.message||"Please try again.");}
+  finally{setAuthBusy(false);}
+ }
+ async function signOut(){
+  if(!supabase)return;
+  const {error}=await supabase.auth.signOut();
+  if(error)Alert.alert("Sign-out failed",error.message);
+ }
  useEffect(()=>{AsyncStorage.getItem("@jett_uk_pmtiles_path").then(p=>{if(p)setOfflineMapPath(p);}).catch(()=>{});},[]);
  useEffect(()=>{(async()=>{try{const raw=await AsyncStorage.getItem("@jett_drivers");if(raw){const data=JSON.parse(raw);setDrivers(data.drivers||[]);setActiveDriverId(data.activeDriverId||"");}}catch{}})();},[]);
  useEffect(()=>{AsyncStorage.setItem("@jett_drivers",JSON.stringify({drivers,activeDriverId})).catch(()=>{});},[drivers,activeDriverId]);
@@ -887,7 +927,8 @@ function openNavigation(stop,routeStops=[stop]){
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
  </ScrollView>;
  const completionScreen=()=>{const item=stops.find(x=>x.id===selectedDeliveryId);if(!item)return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><Text style={s.small}>No property selected. Return to Delivery Manager.</Text><Button title="Back to Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><View style={s.card}><Text style={s.cardTitle}>{item.name}</Text><Text style={s.small}>{item.town} {item.postcode}</Text><Text style={[s.small,{marginTop:8}]}>Required: {Number(item.wheelieBins||0)} wheelie bins · {Number(item.foodCaddies||0)} food caddies</Text></View><Text style={s.cardTitle}>DELIVERY OUTCOME</Text>{["Delivered","Partially delivered","No access","Wrong address","Damaged item","Customer not home"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDeliveryOutcome(v)}><View style={[s.radio,{borderColor:deliveryOutcome===v?C.green:C.muted}]}>{deliveryOutcome===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}<View style={s.card}><Text style={s.cardTitle}>ACTUALLY DELIVERED</Text><Text style={s.small}>Wheelie bins (max {Number(item.wheelieBins||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualWheelieQty} onChangeText={setActualWheelieQty} placeholder="Bins delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Food waste caddies (max {Number(item.foodCaddies||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualCaddyQty} onChangeText={setActualCaddyQty} placeholder="Caddies delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Delivery notes / reason</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={deliveryNotes} onChangeText={setDeliveryNotes} placeholder="Add details about the delivery or problem..." placeholderTextColor="#78939b"/></View><Button title="Save Delivery Report" onPress={saveCompletion}/><Button title="Cancel" outline onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;};
- let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="vehicleLog"?vehicleLogScreen():screen==="vehicleChecklist"?vehicleChecklistScreen():screen==="drivers"?driverManagementScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
+ const authScreen=()=> <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={{flexGrow:1,justifyContent:"center",padding:22}}><View style={{alignItems:"center",marginBottom:28}}>{logo}<Text style={{color:C.text,fontSize:29,fontWeight:"900",marginTop:12}}>Jett Pal</Text><Text style={{color:C.muted,marginTop:5}}>Jett Distribution operations</Text></View><View style={s.card}><Text style={s.cardTitle}>{authMode==="signup"?"Create your account":"Welcome back"}</Text><Text style={s.small}>Sign in to access your company's Jett Pal workspace.</Text>{authMode==="signup"? <TextInput style={s.input} value={authName} onChangeText={setAuthName} placeholder="Full name" placeholderTextColor="#78939b" autoCapitalize="words"/>:null}<TextInput style={s.input} value={authEmail} onChangeText={setAuthEmail} placeholder="Email address" placeholderTextColor="#78939b" keyboardType="email-address" autoCapitalize="none" autoCorrect={false}/><TextInput style={s.input} value={authPassword} onChangeText={setAuthPassword} placeholder="Password (at least 8 characters)" placeholderTextColor="#78939b" secureTextEntry autoCapitalize="none"/><TouchableOpacity style={[s.button,{opacity:authBusy?0.6:1}]} disabled={authBusy} onPress={submitAuth}><Text style={s.buttonText}>{authBusy?"Please wait…":authMode==="signup"?"Create account":"Sign in"}</Text></TouchableOpacity><TouchableOpacity style={{padding:14,alignItems:"center"}} onPress={()=>setAuthMode(authMode==="signup"?"signin":"signup")}><Text style={{color:C.green,fontWeight:"900"}}>{authMode==="signup"?"Already registered? Sign in":"New to Jett Pal? Create an account"}</Text></TouchableOpacity><Text style={[s.small,{textAlign:"center",marginTop:8}]}>Email and password sign-in is available now. Phone and Google sign-in will be added after the core account flow is tested.</Text></View></ScrollView></SafeAreaView>;
+ let body=authLoading&&isSupabaseConfigured?<SafeAreaView style={s.safe}><View style={{flex:1,alignItems:"center",justifyContent:"center"}}><Text style={{color:C.text,fontWeight:"900"}}>Loading Jett Pal account…</Text></View></SafeAreaView>:isSupabaseConfigured&&!authSession?authScreen():screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="vehicleLog"?vehicleLogScreen():screen==="vehicleChecklist"?vehicleChecklistScreen():screen==="drivers"?driverManagementScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
  return <SafeAreaView style={s.safe}>
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
