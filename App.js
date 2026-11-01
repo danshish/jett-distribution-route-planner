@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import * as Location from "expo-location";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
+import Svg, { Path } from "react-native-svg";
 import { Map as MapLibreMap, Camera as MapCamera } from "@maplibre/maplibre-react-native";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
@@ -21,6 +22,9 @@ export default function App(){
  const [online,setOnline]=useState(true),[screen,setScreen]=useState("home"),[tab,setTab]=useState("Home");
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [stockLoaded,setStockLoaded]=useState({wheelieBins:0,foodCaddies:0});
+ const [driverName,setDriverName]=useState("");
+ const [signaturePath,setSignaturePath]=useState("");
+ const [signatureWidth,setSignatureWidth]=useState(1);
  const [wheelieQty,setWheelieQty]=useState("0"),[caddyQty,setCaddyQty]=useState("0");
  const [query,setQuery]=useState(""),[results,setResults]=useState([]),[busy,setBusy]=useState(false),[chosen,setChosen]=useState(null);
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Pal Delivery Route");
@@ -427,6 +431,41 @@ function openNavigation(stop,routeStops=[stop]){
    Alert.alert("Load photo saved","The vehicle load photo is saved on this phone. Confirm the load again after checking the quantities.");
   }catch(error){Alert.alert("Photo unavailable",error.message||"Jett could not take or save the photo.");}
  }
+ const signoffScreen=()=>{
+  const addSignaturePoint=(event,move=false)=>{
+   const x=Math.max(0,Math.min(320,event.nativeEvent.locationX/signatureWidth*320));
+   const y=Math.max(0,Math.min(160,event.nativeEvent.locationY));
+   const point=(move?" L ":" M ")+x.toFixed(1)+" "+y.toFixed(1);
+   setSignaturePath(p=>p+point);
+  };
+  const saveDriverSignoff=()=>{
+   if(!driverName.trim())return Alert.alert("Driver name required","Enter the driver's full name before signing off.");
+   if(!signaturePath.trim())return Alert.alert("Signature required","Please sign in the box before saving.");
+   if(!stockLoaded.checkedAt)return Alert.alert("Vehicle load not confirmed","Complete the vehicle load check first.");
+   if(!stockLoaded.returnedAt)return Alert.alert("Return check required","Save the unused stock return check before signing off.");
+   const record={name:driverName.trim(),signature:signaturePath,signedAt:new Date().toISOString()};
+   setStockLoaded(p=>({...p,driverSignoff:record}));
+   Alert.alert("Driver sign-off saved","The driver's name, signature and check time have been saved on this phone.");
+  };
+  const existing=stockLoaded.driverSignoff;
+  return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Driver Sign-off</Text><Text style={s.small}>Complete the vehicle load and depot return checks, then sign to confirm the shift records.</Text>
+   <View style={s.card}><Text style={s.cardTitle}>SHIFT CHECKS</Text>
+    <Text style={stockLoaded.checkedAt?s.greenText:{color:C.orange,fontWeight:"900"}}>{stockLoaded.checkedAt?"✓ Vehicle load confirmed":"• Vehicle load check still required"}</Text>
+    <Text style={stockLoaded.returnedAt?s.greenText:{color:C.orange,fontWeight:"900",marginTop:8}}>{stockLoaded.returnedAt?"✓ Return-to-depot check saved":"• Return-to-depot check still required"}</Text>
+   </View>
+   <View style={s.card}><Text style={s.cardTitle}>DRIVER DETAILS</Text><Text style={s.small}>Full name</Text><TextInput style={s.input} value={driverName} onChangeText={setDriverName} placeholder="Enter driver's full name" placeholderTextColor="#78939b"/>
+    <Text style={[s.small,{marginTop:14}]}>Driver signature</Text>
+    <View onLayout={e=>setSignatureWidth(Math.max(1,e.nativeEvent.layout.width))} onStartShouldSetResponder={()=>true} onMoveShouldSetResponder={()=>true} onResponderGrant={e=>addSignaturePoint(e,false)} onResponderMove={e=>addSignaturePoint(e,true)} style={{height:160,backgroundColor:"#f7faf8",borderRadius:10,marginTop:8,overflow:"hidden"}}>
+     <Svg width="100%" height="160" viewBox="0 0 320 160"><Path d={signaturePath} stroke="#102d27" strokeWidth="2.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/></Svg>
+     {!signaturePath?<Text pointerEvents="none" style={{position:"absolute",left:0,right:0,bottom:12,textAlign:"center",color:"#80918b",fontSize:12}}>Sign here with your finger</Text>:null}
+    </View>
+    <Button title="Clear signature" outline onPress={()=>setSignaturePath("")}/>
+    <Button title="Save driver sign-off" onPress={saveDriverSignoff}/>
+   </View>
+   {existing?<View style={s.card}><Text style={s.cardTitle}>LATEST SIGN-OFF</Text><Text style={s.greenText}>✓ Signed by {existing.name}</Text><Text style={s.small}>{new Date(existing.signedAt).toLocaleString()}</Text><View style={{height:120,backgroundColor:"#f7faf8",borderRadius:10,marginTop:10,overflow:"hidden"}}><Svg width="100%" height="120" viewBox="0 0 320 160"><Path d={existing.signature} stroke="#102d27" strokeWidth="2.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/></Svg></View></View>:null}
+   <Button title="Back to Vehicle Stock" outline onPress={()=>setScreen("stock")}/>
+  </ScrollView>;
+ };
  const stockScreen=()=>{
   const requiredBins=stops.reduce((n,x)=>n+Number(x.wheelieBins||0),0);
   const requiredCaddies=stops.reduce((n,x)=>n+Number(x.foodCaddies||0),0);
@@ -467,6 +506,7 @@ function openNavigation(stop,routeStops=[stop]){
     <Button title="Save return-to-depot check" onPress={saveReturnCheck}/>
    </View>
    <Text style={s.foot}>Stock counts, load photo and depot return record are saved on this phone. A load photo and quantity confirmation are required for the pre-departure check.</Text>
+   <Button title="Driver sign-off & signature" onPress={()=>{setDriverName(stockLoaded.driverSignoff?.name||"");setSignaturePath("");setScreen("signoff");}}/>
    <Button title="Open Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}} outline/>
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
@@ -607,7 +647,7 @@ function openNavigation(stop,routeStops=[stop]){
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
  </ScrollView>;
  const completionScreen=()=>{const item=stops.find(x=>x.id===selectedDeliveryId);if(!item)return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><Text style={s.small}>No property selected. Return to Delivery Manager.</Text><Button title="Back to Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><View style={s.card}><Text style={s.cardTitle}>{item.name}</Text><Text style={s.small}>{item.town} {item.postcode}</Text><Text style={[s.small,{marginTop:8}]}>Required: {Number(item.wheelieBins||0)} wheelie bins · {Number(item.foodCaddies||0)} food caddies</Text></View><Text style={s.cardTitle}>DELIVERY OUTCOME</Text>{["Delivered","Partially delivered","No access","Wrong address","Damaged item","Customer not home"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDeliveryOutcome(v)}><View style={[s.radio,{borderColor:deliveryOutcome===v?C.green:C.muted}]}>{deliveryOutcome===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}<View style={s.card}><Text style={s.cardTitle}>ACTUALLY DELIVERED</Text><Text style={s.small}>Wheelie bins (max {Number(item.wheelieBins||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualWheelieQty} onChangeText={setActualWheelieQty} placeholder="Bins delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Food waste caddies (max {Number(item.foodCaddies||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualCaddyQty} onChangeText={setActualCaddyQty} placeholder="Caddies delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Delivery notes / reason</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={deliveryNotes} onChangeText={setDeliveryNotes} placeholder="Add details about the delivery or problem..." placeholderTextColor="#78939b"/></View><Button title="Save Delivery Report" onPress={saveCompletion}/><Button title="Cancel" outline onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;};
- let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
+ let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
  return <SafeAreaView style={s.safe}>
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
