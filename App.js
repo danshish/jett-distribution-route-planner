@@ -7,6 +7,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx";
 import * as Location from "expo-location";
 import * as Sharing from "expo-sharing";
+import * as ImagePicker from "expo-image-picker";
 import { Map as MapLibreMap, Camera as MapCamera } from "@maplibre/maplibre-react-native";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
@@ -413,16 +414,59 @@ function openNavigation(stop,routeStops=[stop]){
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
  };
+ async function takeLoadPhoto(){
+  try{
+   const permission=await ImagePicker.requestCameraPermissionsAsync();
+   if(!permission.granted)return Alert.alert("Camera permission needed","Allow Jett Pal to use the camera to photograph the vehicle load.");
+   const result=await ImagePicker.launchCameraAsync({mediaTypes:["images"],quality:0.75});
+   if(result.canceled||!result.assets?.length)return;
+   const source=result.assets[0].uri;
+   const target=FileSystem.documentDirectory+"jett_vehicle_load_"+Date.now()+".jpg";
+   await FileSystem.copyAsync({from:source,to:target});
+   setStockLoaded(p=>({...p,loadPhotoUri:target,checkedAt:null}));
+   Alert.alert("Load photo saved","The vehicle load photo is saved on this phone. Confirm the load again after checking the quantities.");
+  }catch(error){Alert.alert("Photo unavailable",error.message||"Jett could not take or save the photo.");}
+ }
  const stockScreen=()=>{
   const requiredBins=stops.reduce((n,x)=>n+Number(x.wheelieBins||0),0);
   const requiredCaddies=stops.reduce((n,x)=>n+Number(x.foodCaddies||0),0);
   const deliveredBins=stops.reduce((n,x)=>n+Number(x.done?(x.deliveredWheelieBins??x.wheelieBins??0):0),0);
   const deliveredCaddies=stops.reduce((n,x)=>n+Number(x.done?(x.deliveredFoodCaddies??x.foodCaddies??0):0),0);
   const loadedBins=Number(stockLoaded.wheelieBins||0),loadedCaddies=Number(stockLoaded.foodCaddies||0);
-  return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Stock Control</Text><Text style={s.small}>Work out what to load before leaving the depot and what remains after deliveries.</Text>
-   <View style={s.card}><Text style={s.cardTitle}>WHEELIE BINS</Text><View style={s.stats}><View><Text style={s.stat}>{requiredBins}</Text><Text style={s.small}>REQUIRED</Text></View><View><Text style={s.stat}>{loadedBins}</Text><Text style={s.small}>LOADED</Text></View><View><Text style={s.stat}>{deliveredBins}</Text><Text style={s.small}>DELIVERED</Text></View></View><TextInput style={s.input} keyboardType="number-pad" value={String(stockLoaded.wheelieBins??0)} onChangeText={v=>setStockLoaded(p=>({...p,wheelieBins:Math.max(0,parseInt(v||"0",10)||0)}))} placeholder="Number of wheelie bins loaded" placeholderTextColor="#78939b"/><Text style={s.greenText}>Still to load: {Math.max(0,requiredBins-loadedBins)} · Remaining on van after deliveries: {Math.max(0,loadedBins-deliveredBins)}</Text></View>
-   <View style={s.card}><Text style={s.cardTitle}>FOOD WASTE CADDIES</Text><View style={s.stats}><View><Text style={s.stat}>{requiredCaddies}</Text><Text style={s.small}>REQUIRED</Text></View><View><Text style={s.stat}>{loadedCaddies}</Text><Text style={s.small}>LOADED</Text></View><View><Text style={s.stat}>{deliveredCaddies}</Text><Text style={s.small}>DELIVERED</Text></View></View><TextInput style={s.input} keyboardType="number-pad" value={String(stockLoaded.foodCaddies??0)} onChangeText={v=>setStockLoaded(p=>({...p,foodCaddies:Math.max(0,parseInt(v||"0",10)||0)}))} placeholder="Number of food caddies loaded" placeholderTextColor="#78939b"/><Text style={s.greenText}>Still to load: {Math.max(0,requiredCaddies-loadedCaddies)} · Remaining on van after deliveries: {Math.max(0,loadedCaddies-deliveredCaddies)}</Text></View>
-   <Text style={s.foot}>Stock figures are saved on this phone. Delivery totals are calculated from properties marked as delivered.</Text>
+  const binsShort=Math.max(0,requiredBins-loadedBins),caddiesShort=Math.max(0,requiredCaddies-loadedCaddies);
+  const stockReady=binsShort===0&&caddiesShort===0;
+  const returnedBins=Number(stockLoaded.returnedWheelieBins||0),returnedCaddies=Number(stockLoaded.returnedFoodCaddies||0);
+  const updateStock=(key,value)=>setStockLoaded(p=>({...p,[key]:Math.max(0,parseInt(value||"0",10)||0),checkedAt:null}));
+  const confirmVehicleLoad=()=>{
+   if(!stockReady)return Alert.alert("Vehicle stock is short","Load the missing "+binsShort+" wheelie bins and "+caddiesShort+" food caddies before confirming.");
+   if(!stockLoaded.loadPhotoUri)return Alert.alert("Take a load photo first","Photograph the loaded vehicle before confirming the vehicle check.");
+   setStockLoaded(p=>({...p,checkedAt:new Date().toISOString()}));
+   Alert.alert("Vehicle load confirmed","The quantities and load photo have been saved on this phone.");
+  };
+  const saveReturnCheck=()=>{
+   setStockLoaded(p=>({...p,returnedAt:new Date().toISOString()}));
+   Alert.alert("Return check saved","The unused stock returned to the depot has been recorded.");
+  };
+  return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Vehicle Stock & Return Check</Text><Text style={s.small}>Check the load before leaving the depot, photograph it, then record unused stock when the vehicle returns.</Text>
+   <View style={[s.card,{borderColor:stockReady?C.green:C.orange,borderWidth:1.5}]}>
+    <Text style={s.cardTitle}>{stockReady?"STOCK QUANTITIES COVER THE ROUTE":"MORE STOCK REQUIRED"}</Text>
+    <Text style={stockReady?s.greenText:{color:C.orange,fontWeight:"900",fontSize:12}}>{stockReady?"Quantities are sufficient for today's delivery list.":"Short by "+binsShort+" wheelie bins and "+caddiesShort+" food caddies."}</Text>
+    {stockLoaded.checkedAt?<Text style={s.greenText}>✓ Load checked {new Date(stockLoaded.checkedAt).toLocaleString()}</Text>:<Text style={s.small}>Vehicle load not yet confirmed.</Text>}
+   </View>
+   <View style={s.card}><Text style={s.cardTitle}>WHEELIE BINS</Text><View style={s.stats}><View><Text style={s.stat}>{requiredBins}</Text><Text style={s.small}>REQUIRED</Text></View><View><Text style={s.stat}>{loadedBins}</Text><Text style={s.small}>LOADED</Text></View><View><Text style={s.stat}>{deliveredBins}</Text><Text style={s.small}>DELIVERED</Text></View></View><TextInput style={s.input} keyboardType="number-pad" value={String(stockLoaded.wheelieBins??0)} onChangeText={v=>updateStock("wheelieBins",v)} placeholder="Number of wheelie bins loaded" placeholderTextColor="#78939b"/><Text style={s.greenText}>Still to load: {binsShort} · Estimated remaining after deliveries: {Math.max(0,loadedBins-deliveredBins)}</Text></View>
+   <View style={s.card}><Text style={s.cardTitle}>FOOD WASTE CADDIES</Text><View style={s.stats}><View><Text style={s.stat}>{requiredCaddies}</Text><Text style={s.small}>REQUIRED</Text></View><View><Text style={s.stat}>{loadedCaddies}</Text><Text style={s.small}>LOADED</Text></View><View><Text style={s.stat}>{deliveredCaddies}</Text><Text style={s.small}>DELIVERED</Text></View></View><TextInput style={s.input} keyboardType="number-pad" value={String(stockLoaded.foodCaddies??0)} onChangeText={v=>updateStock("foodCaddies",v)} placeholder="Number of food caddies loaded" placeholderTextColor="#78939b"/><Text style={s.greenText}>Still to load: {caddiesShort} · Estimated remaining after deliveries: {Math.max(0,loadedCaddies-deliveredCaddies)}</Text></View>
+   <View style={s.card}><Text style={s.cardTitle}>VEHICLE LOAD PHOTOGRAPH</Text><Text style={s.small}>Take a picture showing the bins and caddies loaded in the van. The photo stays on this phone.</Text><Button title="Take photo of vehicle load" onPress={takeLoadPhoto}/>
+    {stockLoaded.loadPhotoUri?<Image source={{uri:stockLoaded.loadPhotoUri}} resizeMode="cover" style={{width:"100%",height:210,borderRadius:12,marginTop:12}}/>:<Text style={s.small}>No load photo taken yet.</Text>}
+    <Button title={stockLoaded.checkedAt?"Load confirmed":"Confirm vehicle is loaded"} onPress={confirmVehicleLoad}/>
+   </View>
+   <View style={s.card}><Text style={s.cardTitle}>RETURN TO DEPOT — UNUSED STOCK</Text><Text style={s.small}>At the end of the shift, count the unused stock physically returned to the depot.</Text>
+    <Text style={s.small}>Wheelie bins returned</Text><TextInput style={s.input} keyboardType="number-pad" value={String(stockLoaded.returnedWheelieBins??0)} onChangeText={v=>updateStock("returnedWheelieBins",v)} placeholder="Wheelie bins returned" placeholderTextColor="#78939b"/>
+    <Text style={s.small}>Food waste caddies returned</Text><TextInput style={s.input} keyboardType="number-pad" value={String(stockLoaded.returnedFoodCaddies??0)} onChangeText={v=>updateStock("returnedFoodCaddies",v)} placeholder="Food caddies returned" placeholderTextColor="#78939b"/>
+    <Text style={s.small}>Recorded returned: {returnedBins} wheelie bins · {returnedCaddies} food caddies</Text>
+    {stockLoaded.returnedAt?<Text style={s.greenText}>Last return check: {new Date(stockLoaded.returnedAt).toLocaleString()}</Text>:null}
+    <Button title="Save return-to-depot check" onPress={saveReturnCheck}/>
+   </View>
+   <Text style={s.foot}>Stock counts, load photo and depot return record are saved on this phone. A load photo and quantity confirmation are required for the pre-departure check.</Text>
    <Button title="Open Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}} outline/>
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
