@@ -34,12 +34,14 @@ Existing capabilities include:
 - Add clear app version/build identification and a repeatable release checklist.
 
 ### Phase 2 — Multi-company foundation
-- Select and configure a production backend.
+- Create a Supabase project for the Jett Pal backend.
+- Use Supabase Auth for individual user accounts and Postgres for structured operational data.
+- Use Row Level Security (RLS) policies to enforce organisation membership and role-based access on every tenant-owned table.
 - Create organisations, memberships, user profiles and roles.
 - Move shared operational records to organisation-scoped server storage.
-- Enforce tenant isolation in backend policies and test cross-company access denial.
+- Test cross-company access denial at the database/API layer.
 - Add sign-in and invitation/onboarding flows.
-- Preserve local offline queues and synchronisation.
+- Preserve local offline queues and implement deliberate synchronisation with conflict handling.
 
 ### Phase 3 — Commercial operations
 - Add company setup, team invitations and admin tools.
@@ -53,6 +55,14 @@ Existing capabilities include:
 - Resolve pilot feedback before onboarding external companies.
 - Prepare privacy information, terms, support process and store release assets.
 
+## Backend decision
+**Recommended: Supabase.** It fits the existing Expo app and provides Postgres, authentication and database-enforced Row Level Security. Relational data suits organisations, memberships, drivers, vehicles, routes, deliveries and stock records. Expo's current guide documents Supabase setup for React Native. Firestore has convenient built-in offline persistence, but its documented conflict behaviour is last-write-wins; Jett Pal should keep explicit control over delivery-report conflicts rather than silently overwrite operational records.
+
+References:
+- Expo Supabase guide: https://docs.expo.dev/guides/using-supabase/
+- Supabase Expo quickstart: https://supabase.com/docs/guides/getting-started/quickstarts/expo-react-native
+- Firestore offline behaviour: https://firebase.google.com/docs/firestore/manage-data/enable-offline
+
 ## Initial pricing hypotheses
 These are test prices, not final commitments:
 - Starter: £29.99/month
@@ -62,8 +72,8 @@ These are test prices, not final commitments:
 
 Pricing should ultimately be based on customer value and a clear unit such as active vehicles, users or operational sites. Avoid charging for features before they are reliable.
 
-## Immediate next decision
-Choose the backend and authentication approach before implementing multi-company data changes. Compare maintainability, security rules, offline sync support, UK/EU data residency options, cost and Expo/React Native compatibility. Do not add billing until organisation membership and access control are working and tested.
+## Immediate next step
+Create a Supabase account and a new project for Jett Pal. Keep database credentials private. The mobile app will eventually use only the project URL and publishable key; never put a service-role key in the app or commit secrets to GitHub. After the project is created, configure the schema and RLS policies before connecting operational screens.
 
 ## Release gate
 Do not describe Jett Pal as multi-company ready until automated or repeatable tests prove that a user from Company A cannot read, change, export or infer Company B's records through any API or client workflow.
