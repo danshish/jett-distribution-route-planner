@@ -15,6 +15,7 @@
     },
     "plugins": [
       "@maplibre/maplibre-react-native"
-    ]
+    ],
+    "scheme": "jettpal"
   }
 }
