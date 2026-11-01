@@ -28,9 +28,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Generate Jett offline routing module scaffold
-        run: EXPO_NONINTERACTIVE=1 npx create-expo-module@1.0.15 jett-routing-engine --local --features Function AsyncFunction --name JettRoutingEngine --package expo.modules.jettrouting
-
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install --non-interactive
 
