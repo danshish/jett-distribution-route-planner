@@ -22,6 +22,11 @@ export default function App(){
  const [online,setOnline]=useState(true),[screen,setScreen]=useState("home"),[tab,setTab]=useState("Home");
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [stockLoaded,setStockLoaded]=useState({wheelieBins:0,foodCaddies:0});
+ const [defectType,setDefectType]=useState("Vehicle fault");
+ const [defectSeverity,setDefectSeverity]=useState("Needs attention");
+ const [defectDescription,setDefectDescription]=useState("");
+ const [defectLocation,setDefectLocation]=useState("");
+ const [defectPhotoUri,setDefectPhotoUri]=useState(null);
  const [driverName,setDriverName]=useState("");
  const [signaturePath,setSignaturePath]=useState("");
  const [signatureWidth,setSignatureWidth]=useState(1);
@@ -415,9 +420,58 @@ function openNavigation(stop,routeStops=[stop]){
    <Button title="Import Google Sheet" onPress={importGoogleSheet} outline/>
    <View style={s.card}><Text style={s.cardTitle}>TODAY'S PROPERTIES</Text>{stops.length===0?<Text style={s.small}>No delivery jobs loaded yet. Import a spreadsheet or add addresses using House Finder.</Text>:stops.map((x,i)=><View key={x.id} style={s.stop}><View style={s.number}><Text style={s.numberText}>{i+1}</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.town} {x.postcode}</Text><Text style={s.small}>Wheelie bins: {Number(x.wheelieBins||0)} · Food caddies: {Number(x.foodCaddies||0)}</Text><Text style={[s.small,{color:x.done?C.green:C.orange}]}>{x.deliveryOutcome&&x.deliveryOutcome!=="Pending"?x.deliveryOutcome:(x.done?"✓ Delivered":"● Pending")}</Text>{x.deliveryNotes?<Text style={s.small}>Note: {x.deliveryNotes}</Text>:null}</View><TouchableOpacity onPress={()=>openCompletion(x)}><Text style={s.action}>{x.done?"REPORT":"DELIVERED"}</Text></TouchableOpacity></View>)}</View>
    <Button title="Open Stock Control" onPress={()=>{setScreen("stock");setTab("Home");}}/>
+   <Button title="Vehicle Defects & Incident Log" onPress={()=>{setScreen("defects");setTab("Home");}} outline/>
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
  };
+ async function takeDefectPhoto(){
+  try{
+   const permission=await ImagePicker.requestCameraPermissionsAsync();
+   if(!permission.granted)return Alert.alert("Camera permission needed","Allow Jett Pal to use the camera to photograph the fault or incident.");
+   const result=await ImagePicker.launchCameraAsync({mediaTypes:["images"],quality:0.75});
+   if(result.canceled||!result.assets?.length)return;
+   const target=FileSystem.documentDirectory+"jett_defect_"+Date.now()+".jpg";
+   await FileSystem.copyAsync({from:result.assets[0].uri,to:target});
+   setDefectPhotoUri(target);
+   Alert.alert("Photo saved","The photograph has been attached to this report on this phone.");
+  }catch(error){Alert.alert("Photo unavailable",error.message||"Jett could not take or save the photo.");}
+ }
+ function saveDefectReport(){
+  if(!defectDescription.trim())return Alert.alert("Description required","Describe the fault, damage or incident before saving.");
+  const item={id:"defect_"+Date.now(),type:defectType,severity:defectSeverity,description:defectDescription.trim(),location:defectLocation.trim(),photoUri:defectPhotoUri,reportedAt:new Date().toISOString(),status:"Open"};
+  setStockLoaded(p=>({...p,defectReports:[item,...(p.defectReports||[])].slice(0,100)}));
+  setDefectDescription("");setDefectLocation("");setDefectPhotoUri(null);
+  setDefectType("Vehicle fault");setDefectSeverity("Needs attention");
+  Alert.alert("Report saved","The vehicle defect or incident has been recorded on this phone.");
+ }
+ function updateDefectStatus(id,status){
+  setStockLoaded(p=>({...p,defectReports:(p.defectReports||[]).map(x=>x.id===id?{...x,status}:x)}));
+ }
+ const defectsScreen=()=>{
+  const reports=stockLoaded.defectReports||[];
+  return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Vehicle Defects & Incidents</Text><Text style={s.small}>Record vehicle faults, damage, accidents and other shift incidents. Reports are saved on this phone.</Text>
+   <View style={s.card}><Text style={s.cardTitle}>NEW REPORT</Text><Text style={s.small}>Type of report</Text>
+    {["Vehicle fault","Vehicle damage","Accident / collision","Load damage","Near miss","Other incident"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDefectType(v)}><View style={[s.radio,{borderColor:defectType===v?C.green:C.muted}]}>{defectType===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}
+    <Text style={[s.small,{marginTop:12}]}>Severity</Text>
+    {["Informational","Needs attention","Vehicle unsafe — do not use"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDefectSeverity(v)}><View style={[s.radio,{borderColor:defectSeverity===v?C.green:C.muted}]}>{defectSeverity===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}
+    <Text style={s.small}>Vehicle registration / location</Text><TextInput style={s.input} value={defectLocation} onChangeText={setDefectLocation} placeholder="e.g. Van registration or where it happened" placeholderTextColor="#78939b"/>
+    <Text style={s.small}>What happened? Include any action taken</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={defectDescription} onChangeText={setDefectDescription} placeholder="Describe the fault, damage or incident..." placeholderTextColor="#78939b"/>
+    <Button title="Take photograph" onPress={takeDefectPhoto} outline/>
+    {defectPhotoUri?<Image source={{uri:defectPhotoUri}} resizeMode="cover" style={{width:"100%",height:190,borderRadius:12,marginTop:12}}/>:null}
+    <Button title="Save defect / incident report" onPress={saveDefectReport}/>
+   </View>
+   <View style={s.card}><Text style={s.cardTitle}>REPORT HISTORY ({reports.length})</Text>
+    {reports.length?reports.map(item=><View key={item.id} style={{paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line}}>
+     <Text style={s.resultTitle}>{item.type} · {item.severity}</Text><Text style={s.small}>{new Date(item.reportedAt).toLocaleString()} · {item.location||"No location entered"}</Text><Text style={[s.small,{marginTop:6}]}>{item.description}</Text>
+     {item.photoUri?<Image source={{uri:item.photoUri}} resizeMode="cover" style={{width:"100%",height:160,borderRadius:10,marginTop:8}}/>:null}
+     <Text style={[s.greenText,{marginTop:8}]}>Status: {item.status}</Text>
+     {item.status==="Open"?<View style={{flexDirection:"row",gap:8}}><View style={{flex:1}}><Button title="Mark actioned" onPress={()=>updateDefectStatus(item.id,"Actioned")}/></View><View style={{flex:1}}><Button title="Close report" outline onPress={()=>updateDefectStatus(item.id,"Closed")}/></View></View>:<Button title="Reopen report" outline onPress={()=>updateDefectStatus(item.id,"Open")}/>}
+    </View>):<Text style={s.small}>No faults or incidents have been reported yet.</Text>}
+   </View>
+   <Text style={s.foot}>If a vehicle is unsafe, stop using it and follow your company's breakdown, accident and safety procedures. This log does not replace formal reporting.</Text>
+   <Button title="Back to Home" outline onPress={()=>{setScreen("home");setTab("Home");}}/>
+  </ScrollView>;
+ }
  async function takeLoadPhoto(){
   try{
    const permission=await ImagePicker.requestCameraPermissionsAsync();
@@ -703,7 +757,7 @@ function openNavigation(stop,routeStops=[stop]){
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
  </ScrollView>;
  const completionScreen=()=>{const item=stops.find(x=>x.id===selectedDeliveryId);if(!item)return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><Text style={s.small}>No property selected. Return to Delivery Manager.</Text><Button title="Back to Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><View style={s.card}><Text style={s.cardTitle}>{item.name}</Text><Text style={s.small}>{item.town} {item.postcode}</Text><Text style={[s.small,{marginTop:8}]}>Required: {Number(item.wheelieBins||0)} wheelie bins · {Number(item.foodCaddies||0)} food caddies</Text></View><Text style={s.cardTitle}>DELIVERY OUTCOME</Text>{["Delivered","Partially delivered","No access","Wrong address","Damaged item","Customer not home"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDeliveryOutcome(v)}><View style={[s.radio,{borderColor:deliveryOutcome===v?C.green:C.muted}]}>{deliveryOutcome===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}<View style={s.card}><Text style={s.cardTitle}>ACTUALLY DELIVERED</Text><Text style={s.small}>Wheelie bins (max {Number(item.wheelieBins||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualWheelieQty} onChangeText={setActualWheelieQty} placeholder="Bins delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Food waste caddies (max {Number(item.foodCaddies||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualCaddyQty} onChangeText={setActualCaddyQty} placeholder="Caddies delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Delivery notes / reason</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={deliveryNotes} onChangeText={setDeliveryNotes} placeholder="Add details about the delivery or problem..." placeholderTextColor="#78939b"/></View><Button title="Save Delivery Report" onPress={saveCompletion}/><Button title="Cancel" outline onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;};
- let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
+ let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
  return <SafeAreaView style={s.safe}>
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
