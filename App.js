@@ -109,7 +109,7 @@ useEffect(() => {
   setAuthBusy(true);
   try{
    if(authMode==="signup"){
-    const {data,error}=await supabase.auth.signUp({email,password:authPassword,options:{data:{full_name:authName.trim()},emailRedirectTo:Linking.createURL("auth/callback")}});
+    const {data,error}=await supabase.auth.signUp({email,password:authPassword,options:{data:{full_name:authName.trim()},emailRedirectTo:"jettpal://auth/callback"}});
     if(error)throw error;
     if(data.session){setAuthSession(data.session);Alert.alert("Account created","Your Jett Pal account is ready. Your company workspace will be set up next.");}
     else Alert.alert("Check your email","Supabase has sent a confirmation link. Confirm your email, then return here and sign in.");
