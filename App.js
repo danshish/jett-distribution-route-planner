@@ -127,7 +127,7 @@ useEffect(() => {
   if(!email)return Alert.alert("Enter your email","Enter the email address for your Jett Pal account first.");
   setAuthBusy(true);
   try{
-   const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:Linking.createURL("auth/reset-password")});
+   const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:"jettpal://auth/reset-password"});
    if(error)throw error;
    Alert.alert("Reset email sent","Check your inbox and junk folder. Open the reset link on this phone to return to Jett Pal.");
   }catch(error){Alert.alert("Could not send reset email",error.message||"Please try again.");}
