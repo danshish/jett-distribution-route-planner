@@ -499,7 +499,7 @@ function openNavigation(stop,routeStops=[stop]){
  }
  const mapStyle=offlineMapPath?{
   version:8,
-  sources:{uk:{type:"vector",url:"pmtiles://"+offlineMapPath.replace(/^file:\/\//,""),attribution:"© OpenStreetMap contributors · Quarry / Protomaps"}},
+  sources:{uk:{type:"vector",url:"pmtiles://"+offlineMapPath,attribution:"© OpenStreetMap contributors · Quarry / Protomaps"}},
   layers:[
    {id:"background",type:"background",paint:{"background-color":"#e9eee8"}},
    {id:"earth",type:"fill",source:"uk","source-layer":"earth",paint:{"fill-color":"#e9eee8"}},
