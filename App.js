@@ -541,6 +541,61 @@ function openNavigation(stop,routeStops=[stop]){
    Alert.alert("Export failed",error.message||"Jett could not create the delivery sheet.");
   }
  }
+ async function exportHandoverReport(){
+  if(!stops.length)return Alert.alert("No delivery data","Add or import today's delivery stops before creating a handover report.");
+  try{
+   const visited=stops.filter(x=>x.deliveryOutcome&&x.deliveryOutcome!=="Pending").length;
+   const completed=stops.filter(x=>x.done).length;
+   const unsuccessful=stops.filter(x=>x.deliveryOutcome&&x.deliveryOutcome!=="Pending"&&!x.done).length;
+   const pending=stops.length-visited;
+   const bins=stops.reduce((n,x)=>n+Number(x.done?(x.deliveredWheelieBins??x.wheelieBins??0):0),0);
+   const caddies=stops.reduce((n,x)=>n+Number(x.done?(x.deliveredFoodCaddies??x.foodCaddies??0):0),0);
+   const cell=value=>'"'+String(value??"").replace(/"/g,'""')+'"';
+   const rows=[
+    ["JETT PAL — DAILY SHIFT HANDOVER"],
+    ["Report created",new Date().toLocaleString()],
+    ["Route",routeName],
+    ["Driver",stockLoaded.driverSignoff?.name||"Not signed off"],
+    ["Driver signed at",stockLoaded.driverSignoff?.signedAt?new Date(stockLoaded.driverSignoff.signedAt).toLocaleString():"Not signed off"],
+    [],
+    ["SHIFT SUMMARY","Count / quantity"],
+    ["Total properties",stops.length],
+    ["Visited",visited],
+    ["Successfully delivered",completed],
+    ["Unsuccessful / issue",unsuccessful],
+    ["Not visited / pending",pending],
+    ["Wheelie bins delivered",bins],
+    ["Food caddies delivered",caddies],
+    [],
+    ["VEHICLE STOCK CHECK","Recorded value"],
+    ["Wheelie bins loaded",Number(stockLoaded.wheelieBins||0)],
+    ["Food caddies loaded",Number(stockLoaded.foodCaddies||0)],
+    ["Vehicle load confirmed",stockLoaded.checkedAt?new Date(stockLoaded.checkedAt).toLocaleString():"No"],
+    ["Load photograph",stockLoaded.loadPhotoUri?"Saved on device":"Not taken"],
+    ["Wheelie bins returned to depot",Number(stockLoaded.returnedWheelieBins||0)],
+    ["Food caddies returned to depot",Number(stockLoaded.returnedFoodCaddies||0)],
+    ["Depot return check",stockLoaded.returnedAt?new Date(stockLoaded.returnedAt).toLocaleString():"Not saved"],
+    [],
+    ["DELIVERY-BY-DELIVERY HANDOVER"],
+    ["Stop","Property / Address","Town","Postcode","Outcome","Bins required","Bins delivered","Caddies required","Caddies delivered","Issue / notes","Completed at"],
+    ...stops.map((x,i)=>[
+     i+1,x.name||x.address||"",x.town||"",x.postcode||"",
+     x.deliveryOutcome||(x.done?"Delivered":"Pending"),
+     Number(x.wheelieBins||0),x.done?Number(x.deliveredWheelieBins??x.wheelieBins??0):0,
+     Number(x.foodCaddies||0),x.done?Number(x.deliveredFoodCaddies??x.foodCaddies??0):0,
+     x.deliveryNotes||"",x.completedAt?new Date(x.completedAt).toLocaleString():""
+    ])
+   ];
+   const csv="\\uFEFF"+rows.map(row=>row.map(cell).join(",")).join("\\r\\n");
+   const filename="Jett_Shift_Handover_"+new Date().toISOString().slice(0,10)+".csv";
+   const uri=FileSystem.documentDirectory+filename;
+   await FileSystem.writeAsStringAsync(uri,csv,{encoding:FileSystem.EncodingType.UTF8});
+   if(!await Sharing.isAvailableAsync())throw new Error("Sharing is not available on this device.");
+   await Sharing.shareAsync(uri,{mimeType:"text/csv",dialogTitle:"Share Jett shift handover report",UTI:"public.comma-separated-values-text"});
+  }catch(error){
+   Alert.alert("Handover export failed",error.message||"Jett could not create the handover report.");
+  }
+ }
  const performanceScreen=()=>{
   const completed=stops.filter(x=>x.done).length;
   const visited=stops.filter(x=>x.deliveryOutcome&&x.deliveryOutcome!=="Pending").length;
@@ -556,6 +611,7 @@ function openNavigation(stop,routeStops=[stop]){
   return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Performance</Text><Text style={s.small}>Your current delivery progress and saved route activity.</Text>
    <View style={s.stats}><View><Text style={s.stat}>{completed}</Text><Text style={s.small}>DELIVERED</Text></View><View><Text style={s.stat}>{remaining}</Text><Text style={s.small}>REMAINING</Text></View><View><Text style={s.stat}>{routeMiles.toFixed(1)}</Text><Text style={s.small}>ROUTE MILES</Text></View></View>
    <Button title="Export daily delivery sheet (Excel / CSV)" onPress={exportDeliverySheet} outline/>
+   <Button title="Export daily shift handover report" onPress={exportHandoverReport}/>
    <View style={s.card}><Text style={s.cardTitle}>END-OF-DAY DELIVERY SUMMARY</Text><View style={s.stats}><View><Text style={s.stat}>{visited}</Text><Text style={s.small}>VISITED</Text></View><View><Text style={s.stat}>{completed}</Text><Text style={s.small}>SUCCESSFUL</Text></View><View><Text style={s.stat}>{failed}</Text><Text style={s.small}>UNSUCCESSFUL</Text></View></View><View style={s.stats}><View><Text style={s.stat}>{remaining}</Text><Text style={s.small}>NOT VISITED</Text></View><View><Text style={s.stat}>{binsDelivered}</Text><Text style={s.small}>BINS DELIVERED</Text></View><View><Text style={s.stat}>{caddiesDelivered}</Text><Text style={s.small}>CADDIES DELIVERED</Text></View></View><View style={{height:10,backgroundColor:C.bg,borderRadius:8,overflow:"hidden",marginVertical:10}}><View style={{height:10,width:(stops.length?Math.round(completed/stops.length*100):0)+"%",backgroundColor:C.green,borderRadius:8}}/></View><Text style={s.greenText}>{stops.length?Math.round(completed/stops.length*100):0}% successfully completed</Text><Text style={s.small}>{completed} of {stops.length} stops successfully delivered. Failed or partially completed jobs remain visible below.</Text></View><View style={s.card}><Text style={s.cardTitle}>DELIVERY OUTCOMES</Text>{stops.length?stops.map(x=><View key={x.id} style={s.stop}><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.postcode||x.town} · {x.deliveryOutcome|| (x.done?"Delivered":"Pending")}</Text>{x.done?<Text style={s.small}>Delivered: {Number(x.deliveredWheelieBins??x.wheelieBins??0)} bins · {Number(x.deliveredFoodCaddies??x.foodCaddies??0)} caddies</Text>:null}{x.deliveryNotes?<Text style={s.small}>Note: {x.deliveryNotes}</Text>:null}</View></View>):<Text style={s.small}>No delivery jobs on the current list yet.</Text>}</View>
    <View style={s.card}><Text style={s.cardTitle}>LAST 7 DAYS · SAVED ROUTES</Text><View style={s.stats}><View><Text style={s.stat}>{recent.length}</Text><Text style={s.small}>ROUTES SAVED</Text></View><View><Text style={s.stat}>{savedStops}</Text><Text style={s.small}>STOPS PLANNED</Text></View><View><Text style={s.stat}>{savedMiles.toFixed(1)}</Text><Text style={s.small}>MILES SAVED</Text></View></View><Text style={s.foot}>These figures are based on saved route snapshots, not confirmed completed deliveries.</Text></View>
    <View style={s.card}><Text style={s.cardTitle}>RECENT ROUTE HISTORY</Text>{recent.length?recent.slice(0,8).map(x=><View key={x.id} style={s.stop}><View style={{flex:1}}><Text style={s.resultTitle}>{x.name||"Jett Pal Route"}</Text><Text style={s.small}>{new Date(x.savedAt).toLocaleDateString()} · {x.stops?.length||0} stops</Text></View><Text style={s.action}>{Number(x.miles||0).toFixed(1)} mi</Text></View>):<Text style={s.small}>No routes saved in the last 7 days yet. Save a route and it will appear here.</Text>}</View>
