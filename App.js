@@ -45,6 +45,7 @@ export default function App(){
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Pal Delivery Route");
  const [mapChoice,setMapChoice]=useState("google");
  const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
+ const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
@@ -873,10 +874,14 @@ function openNavigation(stop,routeStops=[stop]){
    {offlineMapPath?<Text style={[s.greenText,{marginTop:8}]}>✓ UK offline map installed in Jett Pal</Text>:null}
   </View>
   {offlineMapPath? <View style={{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
-   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
+   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}
+    onWillStartLoadingMap={()=>setMapLoadStatus("Loading map style…")}
+    onDidFinishLoadingMap={()=>setMapLoadStatus("Map style loaded. Checking map tiles…")}
+    onDidFailLoadingMap={()=>setMapLoadStatus("Map style failed to load. The diagnostic build has detected a map loading error.")}
+    onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
     <MapCamera initialViewState={{center:[1.7,52.6],zoom:11}}/>
    </MapLibreMap>
-   <View style={{position:"absolute",left:8,bottom:8,backgroundColor:"rgba(255,255,255,0.92)",paddingHorizontal:8,paddingVertical:5,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>© OpenStreetMap contributors · Quarry / Protomaps</Text></View>
+   <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus}</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>© OpenStreetMap contributors · Quarry / Protomaps</Text></View>
   </View>:<View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>Your UK map is ready to import</Text><Text style={s.small}>Once imported, Jett will display the saved UK map here.</Text></View>}
   <Button title="Open Google Maps for navigation" onPress={()=>{if(stops.length)openNavigation(stops[stops.length-1],stops);else Alert.alert("No stops","Add stops first.");}} outline/>
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
