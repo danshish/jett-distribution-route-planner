@@ -6,6 +6,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx";
 import * as Location from "expo-location";
+import * as Sharing from "expo-sharing";
 import { Map as MapLibreMap, Camera as MapCamera } from "@maplibre/maplibre-react-native";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
@@ -426,6 +427,36 @@ function openNavigation(stop,routeStops=[stop]){
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
  };
+ async function exportDeliverySheet(){
+  if(!stops.length)return Alert.alert("No delivery data","Load or add delivery stops before exporting a sheet.");
+  try{
+   const csvCell=value=>'"'+String(value??"").replace(/"/g,'""')+'"';
+   const rows=[
+    ["Jett Pal Daily Delivery Sheet"],
+    ["Exported",new Date().toLocaleString()],
+    [],
+    ["Stop","Property / Address","Town","Postcode","Wheelie bins required","Food caddies required","Outcome","Wheelie bins delivered","Food caddies delivered","Delivery notes","Completed at"],
+    ...stops.map((x,i)=>[
+     i+1,x.name||x.address||"",x.town||"",x.postcode||"",
+     Number(x.wheelieBins||0),Number(x.foodCaddies||0),
+     x.deliveryOutcome||(x.done?"Delivered":"Pending"),
+     x.done?Number(x.deliveredWheelieBins??x.wheelieBins??0):0,
+     x.done?Number(x.deliveredFoodCaddies??x.foodCaddies??0):0,
+     x.deliveryNotes||"",
+     x.completedAt?new Date(x.completedAt).toLocaleString():""
+    ])
+   ];
+   const csv="\\uFEFF"+rows.map(row=>row.map(csvCell).join(",")).join("\\r\\n");
+   const filename="Jett_Delivery_Sheet_"+new Date().toISOString().slice(0,10)+".csv";
+   const uri=FileSystem.documentDirectory+filename;
+   await FileSystem.writeAsStringAsync(uri,csv,{encoding:FileSystem.EncodingType.UTF8});
+   const available=await Sharing.isAvailableAsync();
+   if(!available)throw new Error("Sharing is not available on this device.");
+   await Sharing.shareAsync(uri,{mimeType:"text/csv",dialogTitle:"Share Jett daily delivery sheet",UTI:"public.comma-separated-values-text"});
+  }catch(error){
+   Alert.alert("Export failed",error.message||"Jett could not create the delivery sheet.");
+  }
+ }
  const performanceScreen=()=>{
   const completed=stops.filter(x=>x.done).length;
   const visited=stops.filter(x=>x.deliveryOutcome&&x.deliveryOutcome!=="Pending").length;
@@ -440,6 +471,7 @@ function openNavigation(stop,routeStops=[stop]){
   const savedMiles=recent.reduce((n,x)=>n+Number(x.miles||0),0);
   return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Performance</Text><Text style={s.small}>Your current delivery progress and saved route activity.</Text>
    <View style={s.stats}><View><Text style={s.stat}>{completed}</Text><Text style={s.small}>DELIVERED</Text></View><View><Text style={s.stat}>{remaining}</Text><Text style={s.small}>REMAINING</Text></View><View><Text style={s.stat}>{routeMiles.toFixed(1)}</Text><Text style={s.small}>ROUTE MILES</Text></View></View>
+   <Button title="Export daily delivery sheet (Excel / CSV)" onPress={exportDeliverySheet} outline/>
    <View style={s.card}><Text style={s.cardTitle}>END-OF-DAY DELIVERY SUMMARY</Text><View style={s.stats}><View><Text style={s.stat}>{visited}</Text><Text style={s.small}>VISITED</Text></View><View><Text style={s.stat}>{completed}</Text><Text style={s.small}>SUCCESSFUL</Text></View><View><Text style={s.stat}>{failed}</Text><Text style={s.small}>UNSUCCESSFUL</Text></View></View><View style={s.stats}><View><Text style={s.stat}>{remaining}</Text><Text style={s.small}>NOT VISITED</Text></View><View><Text style={s.stat}>{binsDelivered}</Text><Text style={s.small}>BINS DELIVERED</Text></View><View><Text style={s.stat}>{caddiesDelivered}</Text><Text style={s.small}>CADDIES DELIVERED</Text></View></View><View style={{height:10,backgroundColor:C.bg,borderRadius:8,overflow:"hidden",marginVertical:10}}><View style={{height:10,width:(stops.length?Math.round(completed/stops.length*100):0)+"%",backgroundColor:C.green,borderRadius:8}}/></View><Text style={s.greenText}>{stops.length?Math.round(completed/stops.length*100):0}% successfully completed</Text><Text style={s.small}>{completed} of {stops.length} stops successfully delivered. Failed or partially completed jobs remain visible below.</Text></View><View style={s.card}><Text style={s.cardTitle}>DELIVERY OUTCOMES</Text>{stops.length?stops.map(x=><View key={x.id} style={s.stop}><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.postcode||x.town} · {x.deliveryOutcome|| (x.done?"Delivered":"Pending")}</Text>{x.done?<Text style={s.small}>Delivered: {Number(x.deliveredWheelieBins??x.wheelieBins??0)} bins · {Number(x.deliveredFoodCaddies??x.foodCaddies??0)} caddies</Text>:null}{x.deliveryNotes?<Text style={s.small}>Note: {x.deliveryNotes}</Text>:null}</View></View>):<Text style={s.small}>No delivery jobs on the current list yet.</Text>}</View>
    <View style={s.card}><Text style={s.cardTitle}>LAST 7 DAYS · SAVED ROUTES</Text><View style={s.stats}><View><Text style={s.stat}>{recent.length}</Text><Text style={s.small}>ROUTES SAVED</Text></View><View><Text style={s.stat}>{savedStops}</Text><Text style={s.small}>STOPS PLANNED</Text></View><View><Text style={s.stat}>{savedMiles.toFixed(1)}</Text><Text style={s.small}>MILES SAVED</Text></View></View><Text style={s.foot}>These figures are based on saved route snapshots, not confirmed completed deliveries.</Text></View>
    <View style={s.card}><Text style={s.cardTitle}>RECENT ROUTE HISTORY</Text>{recent.length?recent.slice(0,8).map(x=><View key={x.id} style={s.stop}><View style={{flex:1}}><Text style={s.resultTitle}>{x.name||"Jett Pal Route"}</Text><Text style={s.small}>{new Date(x.savedAt).toLocaleDateString()} · {x.stops?.length||0} stops</Text></View><Text style={s.action}>{Number(x.miles||0).toFixed(1)} mi</Text></View>):<Text style={s.small}>No routes saved in the last 7 days yet. Save a route and it will appear here.</Text>}</View>
