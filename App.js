@@ -22,6 +22,7 @@ export default function App(){
  const [online,setOnline]=useState(true),[screen,setScreen]=useState("home"),[tab,setTab]=useState("Home");
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [stockLoaded,setStockLoaded]=useState({wheelieBins:0,foodCaddies:0});
+ const [vehicleChecklistDraft,setVehicleChecklistDraft]=useState({});
  const [vehicleStartMiles,setVehicleStartMiles]=useState("");
  const [vehicleEndMiles,setVehicleEndMiles]=useState("");
  const [fuelStart,setFuelStart]=useState("");
@@ -427,6 +428,7 @@ function openNavigation(stop,routeStops=[stop]){
    <Button title="Open Stock Control" onPress={()=>{setScreen("stock");setTab("Home");}}/>
    <Button title="Vehicle Defects & Incident Log" onPress={()=>{setScreen("defects");setTab("Home");}} outline/>
    <Button title="Vehicle Mileage & Fuel Log" onPress={()=>{setScreen("vehicleLog");setTab("Home");}} outline/>
+   <Button title="Daily Vehicle Safety Checklist" onPress={()=>{setVehicleChecklistDraft(stockLoaded.vehicleChecklist?.items||{});setScreen("vehicleChecklist");setTab("Home");}} outline/>
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
  };
@@ -453,6 +455,48 @@ function openNavigation(stop,routeStops=[stop]){
  function updateDefectStatus(id,status){
   setStockLoaded(p=>({...p,defectReports:(p.defectReports||[]).map(x=>x.id===id?{...x,status}:x)}));
  }
+ const vehicleChecklistItems=[
+  ["tyres","Tyres and wheels (condition, tread and pressure)"],
+  ["lights","Lights, indicators and hazard lights"],
+  ["mirrors","Mirrors and visibility"],
+  ["windscreen","Windscreen, windows and wipers"],
+  ["brakes","Brakes and parking brake"],
+  ["horn","Horn"],
+  ["seatbelts","Seatbelts and seats"],
+  ["fluids","Fluid levels and visible leaks"],
+  ["bodywork","Vehicle bodywork, doors and number plates"],
+  ["load","Load secured safely"],
+  ["safety","Safety equipment and first-aid kit"]
+ ];
+ function setChecklistAnswer(key,value){
+  setVehicleChecklistDraft(p=>({...p,[key]:value}));
+ }
+ function saveVehicleChecklist(){
+  const unanswered=vehicleChecklistItems.filter(([key])=>!vehicleChecklistDraft[key]);
+  if(unanswered.length)return Alert.alert("Checklist incomplete",`Please record a result for all ${unanswered.length} remaining item(s).`);
+  const issues=vehicleChecklistItems.filter(([key])=>vehicleChecklistDraft[key]==="Issue").map(([key,label])=>label);
+  const record={items:{...vehicleChecklistDraft},issues,completedAt:new Date().toISOString(),driver:stockLoaded.driverSignoff?.name||""};
+  setStockLoaded(p=>({...p,vehicleChecklist:record}));
+  Alert.alert(issues.length?"Checklist saved — issues found":"Checklist complete",issues.length?`Recorded ${issues.length} item(s) needing attention. Log each safety fault in Vehicle Defects & Incident Log and do not use an unsafe vehicle.`:"All checklist items were marked OK.");
+ }
+ const vehicleChecklistScreen=()=>{
+  const saved=stockLoaded.vehicleChecklist;
+  const answered=vehicleChecklistItems.filter(([key])=>!!vehicleChecklistDraft[key]).length;
+  return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Daily Vehicle Safety Checklist</Text><Text style={s.small}>Complete these checks before starting the delivery shift. Choose one result for every item.</Text>
+   <View style={s.card}><Text style={s.cardTitle}>PRE-USE CHECK · {answered}/{vehicleChecklistItems.length} COMPLETED</Text>
+    {vehicleChecklistItems.map(([key,label],i)=><View key={key} style={{paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line}}>
+     <Text style={s.resultTitle}>{i+1}. {label}</Text>
+     <View style={{flexDirection:"row",gap:7,marginTop:9}}>
+      {["OK","Issue","N/A"].map(value=><TouchableOpacity key={value} onPress={()=>setChecklistAnswer(key,value)} style={{flex:1,paddingVertical:10,borderRadius:9,alignItems:"center",backgroundColor:vehicleChecklistDraft[key]===value?(value==="Issue"?C.orange:value==="OK"?C.green:C.muted):C.panel,borderWidth:1,borderColor:vehicleChecklistDraft[key]===value?C.text:C.line}}><Text style={{color:C.text,fontWeight:"700"}}>{value}</Text></TouchableOpacity>)}
+     </View>
+    </View>)}
+    <Button title="Save daily vehicle checklist" onPress={saveVehicleChecklist}/>
+   </View>
+   <View style={s.card}><Text style={s.cardTitle}>LAST SAVED CHECK</Text>{saved?<><Text style={s.resultTitle}>{new Date(saved.completedAt).toLocaleString()}</Text><Text style={s.small}>{saved.issues?.length? `${saved.issues.length} item(s) marked Issue`:"No issues reported"}</Text>{saved.issues?.map((v,i)=><Text key={i} style={s.small}>• {v}</Text>)}</>:<Text style={s.small}>No checklist saved yet for this shift.</Text>}</View>
+   <Text style={s.foot}>If a safety-critical item fails, do not take the vehicle on the road until it has been assessed and made safe. Record faults in the Vehicle Defects & Incident Log and follow company procedures.</Text>
+   <Button title="Open Vehicle Defects & Incident Log" outline onPress={()=>setScreen("defects")}/><Button title="Back to Home" outline onPress={()=>{setScreen("home");setTab("Home");}}/>
+  </ScrollView>;
+ };
  const vehicleLogScreen=()=>{
   const saved=stockLoaded.vehicleLog;
   function saveVehicleLog(){
@@ -661,6 +705,12 @@ function openNavigation(stop,routeStops=[stop]){
     ["Vehicle log notes",stockLoaded.vehicleLog?.notes||""],
     ["Vehicle log saved",stockLoaded.vehicleLog?.recordedAt?new Date(stockLoaded.vehicleLog.recordedAt).toLocaleString():"Not recorded"],
     [],
+    ["DAILY VEHICLE SAFETY CHECKLIST"],
+    ["Checklist completed",stockLoaded.vehicleChecklist?.completedAt?new Date(stockLoaded.vehicleChecklist.completedAt).toLocaleString():"Not recorded"],
+    ["Checklist driver",stockLoaded.vehicleChecklist?.driver||"Not recorded"],
+    ["Items marked issue",(stockLoaded.vehicleChecklist?.issues||[]).join("; ")||"None recorded"],
+    ...vehicleChecklistItems.map(([key,label])=>[label,stockLoaded.vehicleChecklist?.items?.[key]||"Not checked"]),
+    [],
     ["DELIVERY-BY-DELIVERY HANDOVER"],
     ["Stop","Property / Address","Town","Postcode","Outcome","Bins required","Bins delivered","Caddies required","Caddies delivered","Issue / notes","Completed at"],
     ...stops.map((x,i)=>[
@@ -788,7 +838,7 @@ function openNavigation(stop,routeStops=[stop]){
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
  </ScrollView>;
  const completionScreen=()=>{const item=stops.find(x=>x.id===selectedDeliveryId);if(!item)return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><Text style={s.small}>No property selected. Return to Delivery Manager.</Text><Button title="Back to Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><View style={s.card}><Text style={s.cardTitle}>{item.name}</Text><Text style={s.small}>{item.town} {item.postcode}</Text><Text style={[s.small,{marginTop:8}]}>Required: {Number(item.wheelieBins||0)} wheelie bins · {Number(item.foodCaddies||0)} food caddies</Text></View><Text style={s.cardTitle}>DELIVERY OUTCOME</Text>{["Delivered","Partially delivered","No access","Wrong address","Damaged item","Customer not home"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDeliveryOutcome(v)}><View style={[s.radio,{borderColor:deliveryOutcome===v?C.green:C.muted}]}>{deliveryOutcome===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}<View style={s.card}><Text style={s.cardTitle}>ACTUALLY DELIVERED</Text><Text style={s.small}>Wheelie bins (max {Number(item.wheelieBins||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualWheelieQty} onChangeText={setActualWheelieQty} placeholder="Bins delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Food waste caddies (max {Number(item.foodCaddies||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualCaddyQty} onChangeText={setActualCaddyQty} placeholder="Caddies delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Delivery notes / reason</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={deliveryNotes} onChangeText={setDeliveryNotes} placeholder="Add details about the delivery or problem..." placeholderTextColor="#78939b"/></View><Button title="Save Delivery Report" onPress={saveCompletion}/><Button title="Cancel" outline onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;};
- let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="vehicleLog"?vehicleLogScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
+ let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="vehicleLog"?vehicleLogScreen():screen==="vehicleChecklist"?vehicleChecklistScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
  return <SafeAreaView style={s.safe}>
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
