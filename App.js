@@ -24,6 +24,7 @@ export default function App(){
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Pal Delivery Route");
  const [mapChoice,setMapChoice]=useState("google");
  const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
+ const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
  const [startQuery,setStartQuery]=useState("");
@@ -448,24 +449,53 @@ function openNavigation(stop,routeStops=[stop]){
  };
  const savedScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Saved Routes</Text>{saved.length===0?<View style={s.card}><Text style={s.small}>No saved routes yet. Save a route to keep it on your phone.</Text></View>:saved.map(r=><View key={r.id} style={s.card}><Text style={s.cardTitle}>{r.name}</Text><Text style={s.small}>{r.stops.length} stops · {Number(r.miles||0).toFixed(1)} miles</Text><Button title="Load Route" onPress={()=>{setStops(r.stops);setScreen("route");setTab("Route");}}/></View>)}</ScrollView>;
  const settingsScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Navigation Settings</Text><View style={s.card}><Text style={s.cardTitle}>Preferred map app</Text><Text style={s.small}>Choose which app to use when you start a route. You can also choose each time you navigate.</Text>{[["google","Google Maps"],["apple","Apple Maps"]].map(([v,t])=><TouchableOpacity key={v} style={s.preference} onPress={()=>setMapPreference(v)}><View style={[s.radio,{borderColor:mapChoice===v?C.green:C.muted}]}>{mapChoice===v&&<View style={s.radioInner}/>}</View><View style={{flex:1}}><Text style={s.resultTitle}>{t}</Text><Text style={s.small}>{v==="google"?"Works on Android and iPhone":"Available on Apple devices; on Android this may open in a browser or may not be supported"}</Text></View></TouchableOpacity>)}<Button title="Ask me every time" onPress={()=>setMapPreference("ask") } outline/><Text style={[s.small,{marginTop:10}]}>Note: Apple Maps is not normally installed on Android phones. On your Moto G17, Google Maps is the reliable option; Apple Maps links may open in a browser or may not work as expected.</Text></View></ScrollView>;
+ async function saveOfflineMapFile(fromUri){
+  const target=FileSystem.documentDirectory+"uk.pmtiles";
+  const existing=await FileSystem.getInfoAsync(target);
+  if(existing.exists)await FileSystem.deleteAsync(target,{idempotent:true});
+  await FileSystem.copyAsync({from:fromUri,to:target});
+  const info=await FileSystem.getInfoAsync(target);
+  if(!info.exists||Number(info.size||0)<1000000000)throw new Error("The UK map file appears incomplete. Please try again.");
+  setOfflineMapPath(target);
+  await AsyncStorage.setItem("@jett_uk_pmtiles_path",target);
+ }
  async function importOfflineUKMap(){
   try{
-    const picked=await DocumentPicker.getDocumentAsync({type:["application/octet-stream","*/*"],copyToCacheDirectory:true,multiple:false});
-    if(picked.canceled||!picked.assets?.length)return;
-    const file=picked.assets[0];
-    if(!String(file.name||"").toLowerCase().endsWith(".pmtiles"))return Alert.alert("Choose the UK map file","Please select uk.pmtiles from your Downloads folder.");
-    setMapImportBusy(true);
-    const target=FileSystem.documentDirectory+"uk.pmtiles";
-    const existing=await FileSystem.getInfoAsync(target);
-    if(existing.exists)await FileSystem.deleteAsync(target,{idempotent:true});
-    await FileSystem.copyAsync({from:file.uri,to:target});
-    const info=await FileSystem.getInfoAsync(target);
-    if(!info.exists||Number(info.size||0)<1000000000)throw new Error("The copied map file looks incomplete. Please try importing uk.pmtiles again.");
-    setOfflineMapPath(target);
-    await AsyncStorage.setItem("@jett_uk_pmtiles_path",target);
-    Alert.alert("UK map added","Jett Pal has saved the UK map on this phone. It can now be opened offline.");
+   const picked=await DocumentPicker.getDocumentAsync({type:["application/octet-stream","*/*"],copyToCacheDirectory:true,multiple:false});
+   if(picked.canceled||!picked.assets?.length)return;
+   const file=picked.assets[0];
+   if(!String(file.name||"").toLowerCase().endsWith(".pmtiles"))return Alert.alert("Choose the UK map file","Please select uk.pmtiles.");
+   setMapImportBusy(true);
+   await saveOfflineMapFile(file.uri);
+   Alert.alert("UK map added","Jett Pal has saved the UK map on this phone.");
   }catch(error){Alert.alert("Map import failed",error.message||"Jett could not copy the map file.");}
   finally{setMapImportBusy(false);}
+ }
+ async function downloadOfflineUKMap(){
+  if(!online)return Alert.alert("Internet needed","Connect to Wi-Fi or mobile data before downloading the UK map.");
+  Alert.alert("Download whole UK map?","The UK street map is approximately 1.6 GB. Use Wi-Fi and make sure you have at least 3 GB of free storage.",[
+   {text:"Not now",style:"cancel"},
+   {text:"Download map",onPress:async()=>{
+    setMapDownloadBusy(true);setMapDownloadProgress(0);
+    try{
+     const target=FileSystem.documentDirectory+"uk.pmtiles";
+     const url="https://www.quarrymapserver.com/downloads/current/uk.pmtiles";
+     const task=FileSystem.createDownloadResumable(url,target,{},progress=>{
+      const total=progress.totalBytesExpectedToWrite||0;
+      if(total>0)setMapDownloadProgress(Math.min(100,Math.round(progress.totalBytesWritten/total*100)));
+     });
+     const result=await task.downloadAsync();
+     if(!result||result.status<200||result.status>=300)throw new Error("The map server did not provide the UK file. Try importing your existing map instead.");
+     const info=await FileSystem.getInfoAsync(target);
+     if(!info.exists||Number(info.size||0)<1000000000){if(info.exists)await FileSystem.deleteAsync(target,{idempotent:true});throw new Error("The downloaded file is smaller than expected. Try again later or import your existing uk.pmtiles file.");}
+     setOfflineMapPath(target);
+     await AsyncStorage.setItem("@jett_uk_pmtiles_path",target);
+     setMapDownloadProgress(100);
+     Alert.alert("UK map downloaded","Jett Pal has saved the whole UK map for offline use.");
+    }catch(error){Alert.alert("Download unavailable",error.message||"Try importing your downloaded uk.pmtiles file.");}
+    finally{setMapDownloadBusy(false);}
+   }}
+  ]);
  }
  const mapStyle=offlineMapPath?{
   version:8,
@@ -482,8 +512,10 @@ function openNavigation(stop,routeStops=[stop]){
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   <View style={s.card}>
    <Text style={s.cardTitle}>WHOLE UK STREET MAP</Text>
-   <Text style={s.small}>{offlineMapPath?"UK map saved on this phone. The basemap can be used without mobile data.":"Import the uk.pmtiles file you downloaded. It will be copied into Jett's private storage."}</Text>
-   <Button title={mapImportBusy?"Importing UK map…":offlineMapPath?"Replace UK Offline Map":"Import uk.pmtiles from Downloads"} disabled={mapImportBusy} onPress={importOfflineUKMap}/>
+   <Text style={s.small}>{offlineMapPath?"Your UK map is saved on this phone and available offline.":"Download the whole UK street map inside Jett Pal, or import a file you already have."}</Text>
+   <Button title={mapDownloadBusy?"Downloading UK map…":offlineMapPath?"Download map update":"Download UK map (about 1.6 GB)"} disabled={mapDownloadBusy||mapImportBusy} onPress={downloadOfflineUKMap}/>
+   {mapDownloadBusy?<View style={{marginTop:12}}><Text style={s.greenText}>{mapDownloadProgress}% downloaded</Text><View style={{height:9,backgroundColor:C.bg,borderRadius:8,overflow:"hidden",marginTop:7}}><View style={{height:9,width:mapDownloadProgress+"%",backgroundColor:C.green}}/></View><Text style={s.small}>Keep Jett open while the download finishes.</Text></View>:null}
+   <Button title={mapImportBusy?"Importing map…":"I already downloaded the map — Import file"} disabled={mapDownloadBusy||mapImportBusy} onPress={importOfflineUKMap} outline/>
    {offlineMapPath?<Text style={[s.greenText,{marginTop:8}]}>✓ UK offline map installed in Jett Pal</Text>:null}
   </View>
   {offlineMapPath? <View style={{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
