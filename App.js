@@ -22,6 +22,10 @@ export default function App(){
  const [online,setOnline]=useState(true),[screen,setScreen]=useState("home"),[tab,setTab]=useState("Home");
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [stockLoaded,setStockLoaded]=useState({wheelieBins:0,foodCaddies:0});
+ const [drivers,setDrivers]=useState([]);
+ const [activeDriverId,setActiveDriverId]=useState("");
+ const [driverForm,setDriverForm]=useState({name:"",employeeId:"",phone:"",vehicle:"",shift:""});
+ const [editingDriverId,setEditingDriverId]=useState(null);
  const [vehicleChecklistDraft,setVehicleChecklistDraft]=useState({});
  const [vehicleStartMiles,setVehicleStartMiles]=useState("");
  const [vehicleEndMiles,setVehicleEndMiles]=useState("");
@@ -64,6 +68,8 @@ useEffect(() => {
 }, [splashOpacity]);
  useEffect(()=>{(async()=>{try{const [c,r,s,m,l]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
  useEffect(()=>{AsyncStorage.getItem("@jett_uk_pmtiles_path").then(p=>{if(p)setOfflineMapPath(p);}).catch(()=>{});},[]);
+ useEffect(()=>{(async()=>{try{const raw=await AsyncStorage.getItem("@jett_drivers");if(raw){const data=JSON.parse(raw);setDrivers(data.drivers||[]);setActiveDriverId(data.activeDriverId||"");}}catch{}})();},[]);
+ useEffect(()=>{AsyncStorage.setItem("@jett_drivers",JSON.stringify({drivers,activeDriverId})).catch(()=>{});},[drivers,activeDriverId]);
  useEffect(()=>{AsyncStorage.setItem(CURRENT,JSON.stringify(stops)).catch(()=>{});},[stops]);
  useEffect(()=>{AsyncStorage.setItem("@jett_stock_loaded",JSON.stringify(stockLoaded)).catch(()=>{});},[stockLoaded]);
  const miles=useMemo(()=>{let n=0;for(let i=1;i<stops.length;i++){const a=cache[stops[i-1].key],b=cache[stops[i].key];if(a&&b)n+=distance(a,b);}return n;},[stops,cache]);
@@ -386,6 +392,7 @@ function openNavigation(stop,routeStops=[stop]){
     <TouchableOpacity style={s.proTile} onPress={()=>{setScreen("route");setTab("Route");}}><Text style={s.proTileIcon}>↝</Text><Text style={s.proTileTitle}>Route Planner</Text><Text style={s.proTileSub}>Plan and optimise stops</Text></TouchableOpacity>
     <TouchableOpacity style={s.proTile} onPress={()=>{setScreen("stock");setTab("Home");}}><Text style={s.proTileIcon}>▤</Text><Text style={s.proTileTitle}>Stock Control</Text><Text style={s.proTileSub}>Load & track stock</Text></TouchableOpacity>
     <TouchableOpacity style={s.proTile} onPress={()=>{setScreen("performance");setTab("Reports");}}><Text style={s.proTileIcon}>▥</Text><Text style={s.proTileTitle}>Reports & Performance</Text><Text style={s.proTileSub}>Daily delivery totals</Text></TouchableOpacity>
+    <TouchableOpacity style={s.proTile} onPress={()=>{setScreen("drivers");setTab("Home");}}><Text style={s.proTileIcon}>♙</Text><Text style={s.proTileTitle}>Driver Management</Text><Text style={s.proTileSub}>{drivers.length} driver profiles</Text></TouchableOpacity>
     <TouchableOpacity style={s.proTile} onPress={()=>{setScreen("search");setTab("Home");}}><Text style={s.proTileIcon}>⌕</Text><Text style={s.proTileTitle}>House Finder</Text><Text style={s.proTileSub}>Find UK addresses</Text></TouchableOpacity>
     <TouchableOpacity style={s.proTile} onPress={importDeliveryFile}><Text style={s.proTileIcon}>▧</Text><Text style={s.proTileTitle}>Import Delivery List</Text><Text style={s.proTileSub}>Excel / CSV spreadsheet</Text></TouchableOpacity>
     <TouchableOpacity style={s.proTile} onPress={()=>{setScreen("map");setTab("Map");}}><Text style={s.proTileIcon}>⌖</Text><Text style={s.proTileTitle}>Map & Navigation</Text><Text style={s.proTileSub}>View stops & directions</Text></TouchableOpacity>
@@ -455,6 +462,43 @@ function openNavigation(stop,routeStops=[stop]){
  function updateDefectStatus(id,status){
   setStockLoaded(p=>({...p,defectReports:(p.defectReports||[]).map(x=>x.id===id?{...x,status}:x)}));
  }
+ function saveDriverProfile(){
+  if(!driverForm.name.trim())return Alert.alert("Driver name required","Enter the driver's full name.");
+  const record={id:editingDriverId||"driver_"+Date.now(),name:driverForm.name.trim(),employeeId:driverForm.employeeId.trim(),phone:driverForm.phone.trim(),vehicle:driverForm.vehicle.trim(),shift:driverForm.shift.trim()};
+  setDrivers(p=>editingDriverId?p.map(x=>x.id===editingDriverId?record:x):[...p,record]);
+  if(!activeDriverId)setActiveDriverId(record.id);
+  setDriverForm({name:"",employeeId:"",phone:"",vehicle:"",shift:""});setEditingDriverId(null);
+  Alert.alert("Driver saved",`${record.name} has been ${editingDriverId?"updated":"added"} to Driver Management.`);
+ }
+ function editDriverProfile(driver){
+  setEditingDriverId(driver.id);
+  setDriverForm({name:driver.name||"",employeeId:driver.employeeId||"",phone:driver.phone||"",vehicle:driver.vehicle||"",shift:driver.shift||""});
+ }
+ function removeDriverProfile(id){
+  Alert.alert("Remove driver?","This removes the profile from this device. Existing reports are not deleted.",[{text:"Cancel",style:"cancel"},{text:"Remove",style:"destructive",onPress:()=>{setDrivers(p=>p.filter(x=>x.id!==id));if(activeDriverId===id)setActiveDriverId("");if(editingDriverId===id){setEditingDriverId(null);setDriverForm({name:"",employeeId:"",phone:"",vehicle:"",shift:""});}}}]);
+ }
+ const driverManagementScreen=()=>{
+  const active=drivers.find(x=>x.id===activeDriverId);
+  return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Driver Management</Text><Text style={s.small}>Create driver profiles and select who is working the current shift. Profiles are stored on this phone.</Text>
+   <View style={s.card}><Text style={s.cardTitle}>CURRENT SHIFT DRIVER</Text>{active?<><Text style={s.resultTitle}>{active.name}</Text><Text style={s.small}>{active.employeeId||"No employee ID"} · {active.vehicle||"No vehicle assigned"}</Text><Text style={s.small}>{active.shift||"Shift not specified"}</Text></>:<Text style={s.small}>No driver selected. Choose a driver below.</Text>}</View>
+   <View style={s.card}><Text style={s.cardTitle}>{editingDriverId?"EDIT DRIVER PROFILE":"ADD DRIVER PROFILE"}</Text>
+    <Text style={s.small}>Full name *</Text><TextInput style={s.input} value={driverForm.name} onChangeText={v=>setDriverForm(p=>({...p,name:v}))} placeholder="Driver's full name" placeholderTextColor="#78939b"/>
+    <Text style={s.small}>Employee / driver ID</Text><TextInput style={s.input} value={driverForm.employeeId} onChangeText={v=>setDriverForm(p=>({...p,employeeId:v}))} placeholder="e.g. JETT-001" placeholderTextColor="#78939b"/>
+    <Text style={s.small}>Contact phone</Text><TextInput style={s.input} keyboardType="phone-pad" value={driverForm.phone} onChangeText={v=>setDriverForm(p=>({...p,phone:v}))} placeholder="Contact number" placeholderTextColor="#78939b"/>
+    <Text style={s.small}>Allocated vehicle / registration</Text><TextInput style={s.input} value={driverForm.vehicle} onChangeText={v=>setDriverForm(p=>({...p,vehicle:v}))} placeholder="e.g. Van AB12 CDE" placeholderTextColor="#78939b"/>
+    <Text style={s.small}>Usual shift</Text><TextInput style={s.input} value={driverForm.shift} onChangeText={v=>setDriverForm(p=>({...p,shift:v}))} placeholder="e.g. 07:00–15:00" placeholderTextColor="#78939b"/>
+    <Button title={editingDriverId?"Save driver changes":"Add driver"} onPress={saveDriverProfile}/>
+    {editingDriverId?<Button title="Cancel editing" outline onPress={()=>{setEditingDriverId(null);setDriverForm({name:"",employeeId:"",phone:"",vehicle:"",shift:""});}}/>:null}
+   </View>
+   <View style={s.card}><Text style={s.cardTitle}>DRIVER PROFILES ({drivers.length})</Text>{drivers.length?drivers.map(driver=><View key={driver.id} style={{paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line}}>
+    <Text style={s.resultTitle}>{driver.name} {driver.id===activeDriverId?"· CURRENT":""}</Text>
+    <Text style={s.small}>ID: {driver.employeeId||"—"} · Phone: {driver.phone||"—"}</Text><Text style={s.small}>Vehicle: {driver.vehicle||"Not allocated"} · Shift: {driver.shift||"Not set"}</Text>
+    <View style={{flexDirection:"row",gap:8,marginTop:8}}><View style={{flex:1}}><Button title={driver.id===activeDriverId?"Selected":"Set as current driver"} outline={driver.id===activeDriverId} onPress={()=>{setActiveDriverId(driver.id);setDriverName(driver.name);}}/></View><View style={{flex:1}}><Button title="Edit" outline onPress={()=>editDriverProfile(driver)}/></View><View style={{flex:1}}><Button title="Remove" outline onPress={()=>removeDriverProfile(driver.id)}/></View></View>
+   </View>):<Text style={s.small}>No drivers added yet. Add your first driver above.</Text>}</View>
+   <Text style={s.foot}>Driver profiles are currently stored locally on this device. They are not yet shared or synchronised between different phones.</Text>
+   <Button title="Back to Home" outline onPress={()=>{setScreen("home");setTab("Home");}}/>
+  </ScrollView>;
+ };
  const vehicleChecklistItems=[
   ["tyres","Tyres and wheels (condition, tread and pressure)"],
   ["lights","Lights, indicators and hazard lights"],
@@ -626,7 +670,7 @@ function openNavigation(stop,routeStops=[stop]){
     <Button title="Save return-to-depot check" onPress={saveReturnCheck}/>
    </View>
    <Text style={s.foot}>Stock counts, load photo and depot return record are saved on this phone. A load photo and quantity confirmation are required for the pre-departure check.</Text>
-   <Button title="Driver sign-off & signature" onPress={()=>{setDriverName(stockLoaded.driverSignoff?.name||"");setSignaturePath("");setScreen("signoff");}}/>
+   <Button title="Driver sign-off & signature" onPress={()=>{setDriverName(stockLoaded.driverSignoff?.name||drivers.find(x=>x.id===activeDriverId)?.name||"");setSignaturePath("");setScreen("signoff");}}/>
    <Button title="Open Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}} outline/>
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
@@ -838,7 +882,7 @@ function openNavigation(stop,routeStops=[stop]){
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
  </ScrollView>;
  const completionScreen=()=>{const item=stops.find(x=>x.id===selectedDeliveryId);if(!item)return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><Text style={s.small}>No property selected. Return to Delivery Manager.</Text><Button title="Back to Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><View style={s.card}><Text style={s.cardTitle}>{item.name}</Text><Text style={s.small}>{item.town} {item.postcode}</Text><Text style={[s.small,{marginTop:8}]}>Required: {Number(item.wheelieBins||0)} wheelie bins · {Number(item.foodCaddies||0)} food caddies</Text></View><Text style={s.cardTitle}>DELIVERY OUTCOME</Text>{["Delivered","Partially delivered","No access","Wrong address","Damaged item","Customer not home"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDeliveryOutcome(v)}><View style={[s.radio,{borderColor:deliveryOutcome===v?C.green:C.muted}]}>{deliveryOutcome===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}<View style={s.card}><Text style={s.cardTitle}>ACTUALLY DELIVERED</Text><Text style={s.small}>Wheelie bins (max {Number(item.wheelieBins||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualWheelieQty} onChangeText={setActualWheelieQty} placeholder="Bins delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Food waste caddies (max {Number(item.foodCaddies||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualCaddyQty} onChangeText={setActualCaddyQty} placeholder="Caddies delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Delivery notes / reason</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={deliveryNotes} onChangeText={setDeliveryNotes} placeholder="Add details about the delivery or problem..." placeholderTextColor="#78939b"/></View><Button title="Save Delivery Report" onPress={saveCompletion}/><Button title="Cancel" outline onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;};
- let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="vehicleLog"?vehicleLogScreen():screen==="vehicleChecklist"?vehicleChecklistScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
+ let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="vehicleLog"?vehicleLogScreen():screen==="vehicleChecklist"?vehicleChecklistScreen():screen==="drivers"?driverManagementScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
  return <SafeAreaView style={s.safe}>
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
