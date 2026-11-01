@@ -17,7 +17,8 @@
     "expo-file-system": "~19.0.21",
     "xlsx": "^0.18.5",
     "expo-location": "~19.0.7",
-    "@maplibre/maplibre-react-native": "11.4.0"
+    "@maplibre/maplibre-react-native": "11.4.0",
+    "expo-sharing": "~14.0.7"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2"
