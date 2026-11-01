@@ -22,6 +22,11 @@ export default function App(){
  const [online,setOnline]=useState(true),[screen,setScreen]=useState("home"),[tab,setTab]=useState("Home");
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [stockLoaded,setStockLoaded]=useState({wheelieBins:0,foodCaddies:0});
+ const [vehicleStartMiles,setVehicleStartMiles]=useState("");
+ const [vehicleEndMiles,setVehicleEndMiles]=useState("");
+ const [fuelStart,setFuelStart]=useState("");
+ const [fuelEnd,setFuelEnd]=useState("");
+ const [vehicleLogNotes,setVehicleLogNotes]=useState("");
  const [defectType,setDefectType]=useState("Vehicle fault");
  const [defectSeverity,setDefectSeverity]=useState("Needs attention");
  const [defectDescription,setDefectDescription]=useState("");
@@ -421,6 +426,7 @@ function openNavigation(stop,routeStops=[stop]){
    <View style={s.card}><Text style={s.cardTitle}>TODAY'S PROPERTIES</Text>{stops.length===0?<Text style={s.small}>No delivery jobs loaded yet. Import a spreadsheet or add addresses using House Finder.</Text>:stops.map((x,i)=><View key={x.id} style={s.stop}><View style={s.number}><Text style={s.numberText}>{i+1}</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.town} {x.postcode}</Text><Text style={s.small}>Wheelie bins: {Number(x.wheelieBins||0)} · Food caddies: {Number(x.foodCaddies||0)}</Text><Text style={[s.small,{color:x.done?C.green:C.orange}]}>{x.deliveryOutcome&&x.deliveryOutcome!=="Pending"?x.deliveryOutcome:(x.done?"✓ Delivered":"● Pending")}</Text>{x.deliveryNotes?<Text style={s.small}>Note: {x.deliveryNotes}</Text>:null}</View><TouchableOpacity onPress={()=>openCompletion(x)}><Text style={s.action}>{x.done?"REPORT":"DELIVERED"}</Text></TouchableOpacity></View>)}</View>
    <Button title="Open Stock Control" onPress={()=>{setScreen("stock");setTab("Home");}}/>
    <Button title="Vehicle Defects & Incident Log" onPress={()=>{setScreen("defects");setTab("Home");}} outline/>
+   <Button title="Vehicle Mileage & Fuel Log" onPress={()=>{setScreen("vehicleLog");setTab("Home");}} outline/>
    <Button title="Back to Home" onPress={()=>{setScreen("home");setTab("Home");}} outline/>
   </ScrollView>;
  };
@@ -447,6 +453,22 @@ function openNavigation(stop,routeStops=[stop]){
  function updateDefectStatus(id,status){
   setStockLoaded(p=>({...p,defectReports:(p.defectReports||[]).map(x=>x.id===id?{...x,status}:x)}));
  }
+ const vehicleLogScreen=()=>{
+  const saved=stockLoaded.vehicleLog;
+  function saveVehicleLog(){
+   const start=Number(vehicleStartMiles),end=Number(vehicleEndMiles);
+   if(vehicleStartMiles.trim()===""||vehicleEndMiles.trim()===""||!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<start)return Alert.alert("Check mileage","Enter valid start and end odometer readings. End mileage must not be lower than start mileage.");
+   const record={startMileage:start,endMileage:end,milesDriven:end-start,fuelStart:fuelStart.trim(),fuelEnd:fuelEnd.trim(),notes:vehicleLogNotes.trim(),recordedAt:new Date().toISOString()};
+   setStockLoaded(p=>({...p,vehicleLog:record}));
+   Alert.alert("Vehicle log saved",`Today's mileage: ${end-start}. The record is saved on this phone.`);
+  }
+  return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Vehicle Mileage & Fuel Log</Text><Text style={s.small}>Record the odometer and fuel level at the start and end of each shift.</Text>
+   <View style={s.card}><Text style={s.cardTitle}>START OF SHIFT</Text><Text style={s.small}>Starting odometer (miles)</Text><TextInput style={s.input} keyboardType="decimal-pad" value={vehicleStartMiles} onChangeText={setVehicleStartMiles} placeholder="e.g. 42560" placeholderTextColor="#78939b"/><Text style={s.small}>Starting fuel level</Text><TextInput style={s.input} value={fuelStart} onChangeText={setFuelStart} placeholder="e.g. Full, 3/4, half" placeholderTextColor="#78939b"/></View>
+   <View style={s.card}><Text style={s.cardTitle}>END OF SHIFT</Text><Text style={s.small}>Ending odometer (miles)</Text><TextInput style={s.input} keyboardType="decimal-pad" value={vehicleEndMiles} onChangeText={setVehicleEndMiles} placeholder="e.g. 42615" placeholderTextColor="#78939b"/><Text style={s.small}>Ending fuel level</Text><TextInput style={s.input} value={fuelEnd} onChangeText={setFuelEnd} placeholder="e.g. Half, 1/4, Full" placeholderTextColor="#78939b"/><Text style={s.small}>Notes (fuel purchased, warning lights, etc.)</Text><TextInput style={[s.input,{minHeight:85,textAlignVertical:"top"}]} multiline value={vehicleLogNotes} onChangeText={setVehicleLogNotes} placeholder="Add any vehicle or fuel notes..." placeholderTextColor="#78939b"/><Button title="Save vehicle log" onPress={saveVehicleLog}/></View>
+   <View style={s.card}><Text style={s.cardTitle}>SAVED SHIFT RECORD</Text>{saved?<><Text style={s.resultTitle}>{saved.milesDriven} miles driven</Text><Text style={s.small}>Start: {saved.startMileage} miles · End: {saved.endMileage} miles</Text><Text style={s.small}>Fuel: {saved.fuelStart||"Not entered"} → {saved.fuelEnd||"Not entered"}</Text><Text style={s.small}>Saved: {new Date(saved.recordedAt).toLocaleString()}</Text>{saved.notes?<Text style={s.small}>Notes: {saved.notes}</Text>:null}</>:<Text style={s.small}>No vehicle mileage record saved for this shift yet.</Text>}</View>
+   <Text style={s.foot}>Enter readings from the vehicle dashboard. This is an operational log, not a replacement for statutory vehicle records.</Text><Button title="Back to Home" outline onPress={()=>{setScreen("home");setTab("Home");}}/>
+  </ScrollView>;
+ };
  const defectsScreen=()=>{
   const reports=stockLoaded.defectReports||[];
   return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Vehicle Defects & Incidents</Text><Text style={s.small}>Record vehicle faults, damage, accidents and other shift incidents. Reports are saved on this phone.</Text>
@@ -630,6 +652,15 @@ function openNavigation(stop,routeStops=[stop]){
     ["Food caddies returned to depot",Number(stockLoaded.returnedFoodCaddies||0)],
     ["Depot return check",stockLoaded.returnedAt?new Date(stockLoaded.returnedAt).toLocaleString():"Not saved"],
     [],
+    ["VEHICLE MILEAGE & FUEL"],
+    ["Start mileage",stockLoaded.vehicleLog?.startMileage??"Not recorded"],
+    ["End mileage",stockLoaded.vehicleLog?.endMileage??"Not recorded"],
+    ["Miles driven",stockLoaded.vehicleLog?.milesDriven??"Not recorded"],
+    ["Fuel at start",stockLoaded.vehicleLog?.fuelStart||"Not recorded"],
+    ["Fuel at end",stockLoaded.vehicleLog?.fuelEnd||"Not recorded"],
+    ["Vehicle log notes",stockLoaded.vehicleLog?.notes||""],
+    ["Vehicle log saved",stockLoaded.vehicleLog?.recordedAt?new Date(stockLoaded.vehicleLog.recordedAt).toLocaleString():"Not recorded"],
+    [],
     ["DELIVERY-BY-DELIVERY HANDOVER"],
     ["Stop","Property / Address","Town","Postcode","Outcome","Bins required","Bins delivered","Caddies required","Caddies delivered","Issue / notes","Completed at"],
     ...stops.map((x,i)=>[
@@ -757,7 +788,7 @@ function openNavigation(stop,routeStops=[stop]){
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
  </ScrollView>;
  const completionScreen=()=>{const item=stops.find(x=>x.id===selectedDeliveryId);if(!item)return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><Text style={s.small}>No property selected. Return to Delivery Manager.</Text><Button title="Back to Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><View style={s.card}><Text style={s.cardTitle}>{item.name}</Text><Text style={s.small}>{item.town} {item.postcode}</Text><Text style={[s.small,{marginTop:8}]}>Required: {Number(item.wheelieBins||0)} wheelie bins · {Number(item.foodCaddies||0)} food caddies</Text></View><Text style={s.cardTitle}>DELIVERY OUTCOME</Text>{["Delivered","Partially delivered","No access","Wrong address","Damaged item","Customer not home"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDeliveryOutcome(v)}><View style={[s.radio,{borderColor:deliveryOutcome===v?C.green:C.muted}]}>{deliveryOutcome===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}<View style={s.card}><Text style={s.cardTitle}>ACTUALLY DELIVERED</Text><Text style={s.small}>Wheelie bins (max {Number(item.wheelieBins||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualWheelieQty} onChangeText={setActualWheelieQty} placeholder="Bins delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Food waste caddies (max {Number(item.foodCaddies||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualCaddyQty} onChangeText={setActualCaddyQty} placeholder="Caddies delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Delivery notes / reason</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={deliveryNotes} onChangeText={setDeliveryNotes} placeholder="Add details about the delivery or problem..." placeholderTextColor="#78939b"/></View><Button title="Save Delivery Report" onPress={saveCompletion}/><Button title="Cancel" outline onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;};
- let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
+ let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="defects"?defectsScreen():screen==="vehicleLog"?vehicleLogScreen():screen==="signoff"?signoffScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
  return <SafeAreaView style={s.safe}>
   <StatusBar backgroundColor={C.bg} barStyle="light-content"/>
   <View style={{flex:1}}>
