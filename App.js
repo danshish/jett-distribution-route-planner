@@ -499,6 +499,7 @@ function openNavigation(stop,routeStops=[stop]){
  }
  const mapStyle=offlineMapPath?{
   version:8,
+  glyphs:"https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
   sources:{uk:{type:"vector",url:"pmtiles://"+offlineMapPath,attribution:"© OpenStreetMap contributors · Quarry / Protomaps"}},
   layers:[
    {id:"background",type:"background",paint:{"background-color":"#e9eee8"}},
@@ -506,7 +507,9 @@ function openNavigation(stop,routeStops=[stop]){
    {id:"landuse",type:"fill",source:"uk","source-layer":"landuse",paint:{"fill-color":"#dce8d6","fill-opacity":0.8}},
    {id:"water",type:"fill",source:"uk","source-layer":"water",paint:{"fill-color":"#a9d4e8"}},
    {id:"buildings",type:"fill",source:"uk","source-layer":"buildings",minzoom:13,paint:{"fill-color":"#d5cfc4","fill-outline-color":"#c3bcae"}},
-   {id:"roads",type:"line",source:"uk","source-layer":"roads",paint:{"line-color":"#ffffff","line-width":["interpolate",["linear"],["zoom"],5,0.5,10,1.2,14,3,16,5],"line-opacity":0.95}}
+   {id:"roads",type:"line",source:"uk","source-layer":"roads",paint:{"line-color":"#ffffff","line-width":["interpolate",["linear"],["zoom"],5,0.5,10,1.2,14,3,16,5],"line-opacity":0.95}},
+   {id:"place-labels",type:"symbol",source:"uk","source-layer":"places",minzoom:5,layout:{"text-field":["coalesce",["get","name:en"],["get","name"]],"text-font":["Noto Sans Regular"],"text-size":["interpolate",["linear"],["zoom"],5,10,10,13,14,16],"text-max-width":8,"text-allow-overlap":false},paint:{"text-color":"#344b48","text-halo-color":"#ffffff","text-halo-width":1.5}},
+   {id:"road-labels",type:"symbol",source:"uk","source-layer":"roads",minzoom:11,layout:{"symbol-placement":"line","text-field":["coalesce",["get","name:en"],["get","name"]],"text-font":["Noto Sans Regular"],"text-size":["interpolate",["linear"],["zoom"],11,10,14,12,17,14],"text-max-angle":30,"text-max-width":8,"text-keep-upright":true,"text-allow-overlap":false},paint:{"text-color":"#52615e","text-halo-color":"#ffffff","text-halo-width":1.5}}
   ]
  }:null;
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
