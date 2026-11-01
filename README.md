@@ -27,3 +27,6 @@ Note: first-time address searches need internet. Search results are cached on th
 - A Navigation Settings screen lets users select a preferred map app or choose to be asked every time.
 - The selection is saved on the device.
 - Important: Apple Maps is not natively available as an installed app on Android. On a Moto G17, Google Maps is the recommended option; Apple Maps links may open in a browser or fail depending on the device/browser.
+
+## Commercial backend preparation
+The Supabase project connection has been prepared in `lib/supabase.js`. Configure the repository Actions secrets `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` before building. The current mobile screens are not yet using cloud authentication or synchronising operational data; that is the next development phase.
