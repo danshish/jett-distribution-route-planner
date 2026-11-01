@@ -6,6 +6,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as XLSX from "xlsx";
 import * as Location from "expo-location";
+import { Map as MapLibreMap, Camera as MapCamera } from "@maplibre/maplibre-react-native";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
 const C={bg:"#06151d",panel:"#0b2631",panel2:"#103540",green:"#27c653",green2:"#7ad64f",text:"#f4fbf6",muted:"#9bb2b9",line:"#1a414a",blue:"#38a4ff",orange:"#ffad42",red:"#ff5367"};
@@ -22,6 +23,7 @@ export default function App(){
  const [query,setQuery]=useState(""),[results,setResults]=useState([]),[busy,setBusy]=useState(false),[chosen,setChosen]=useState(null);
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Pal Delivery Route");
  const [mapChoice,setMapChoice]=useState("google");
+ const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
  const [startQuery,setStartQuery]=useState("");
@@ -43,6 +45,7 @@ useEffect(() => {
   return () => clearTimeout(timer);
 }, [splashOpacity]);
  useEffect(()=>{(async()=>{try{const [c,r,s,m,l]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
+ useEffect(()=>{AsyncStorage.getItem("@jett_uk_pmtiles_path").then(p=>{if(p)setOfflineMapPath(p);}).catch(()=>{});},[]);
  useEffect(()=>{AsyncStorage.setItem(CURRENT,JSON.stringify(stops)).catch(()=>{});},[stops]);
  useEffect(()=>{AsyncStorage.setItem("@jett_stock_loaded",JSON.stringify(stockLoaded)).catch(()=>{});},[stockLoaded]);
  const miles=useMemo(()=>{let n=0;for(let i=1;i<stops.length;i++){const a=cache[stops[i-1].key],b=cache[stops[i].key];if(a&&b)n+=distance(a,b);}return n;},[stops,cache]);
@@ -445,7 +448,53 @@ function openNavigation(stop,routeStops=[stop]){
  };
  const savedScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Saved Routes</Text>{saved.length===0?<View style={s.card}><Text style={s.small}>No saved routes yet. Save a route to keep it on your phone.</Text></View>:saved.map(r=><View key={r.id} style={s.card}><Text style={s.cardTitle}>{r.name}</Text><Text style={s.small}>{r.stops.length} stops · {Number(r.miles||0).toFixed(1)} miles</Text><Button title="Load Route" onPress={()=>{setStops(r.stops);setScreen("route");setTab("Route");}}/></View>)}</ScrollView>;
  const settingsScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Navigation Settings</Text><View style={s.card}><Text style={s.cardTitle}>Preferred map app</Text><Text style={s.small}>Choose which app to use when you start a route. You can also choose each time you navigate.</Text>{[["google","Google Maps"],["apple","Apple Maps"]].map(([v,t])=><TouchableOpacity key={v} style={s.preference} onPress={()=>setMapPreference(v)}><View style={[s.radio,{borderColor:mapChoice===v?C.green:C.muted}]}>{mapChoice===v&&<View style={s.radioInner}/>}</View><View style={{flex:1}}><Text style={s.resultTitle}>{t}</Text><Text style={s.small}>{v==="google"?"Works on Android and iPhone":"Available on Apple devices; on Android this may open in a browser or may not be supported"}</Text></View></TouchableOpacity>)}<Button title="Ask me every time" onPress={()=>setMapPreference("ask") } outline/><Text style={[s.small,{marginTop:10}]}>Note: Apple Maps is not normally installed on Android phones. On your Moto G17, Google Maps is the reliable option; Apple Maps links may open in a browser or may not work as expected.</Text></View></ScrollView>;
- const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Route Map</Text><View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>{online?"Map preview":"Offline locations"}</Text><Text style={s.small}>{online?"Open the route in Google Maps for live map tiles and turn-by-turn directions.":"Map tiles need internet, but cached stop details remain available."}</Text><Button title="Open Google Maps" onPress={()=>{if(stops.length){const a=stops.map(x=>x.postcode||x.name).join("/");openNavigation(stops[stops.length-1],stops);}else Alert.alert("No stops","Add stops first.");}}/></View>{stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}</ScrollView>;
+ async function importOfflineUKMap(){
+  try{
+    const picked=await DocumentPicker.getDocumentAsync({type:["application/octet-stream","*/*"],copyToCacheDirectory:true,multiple:false});
+    if(picked.canceled||!picked.assets?.length)return;
+    const file=picked.assets[0];
+    if(!String(file.name||"").toLowerCase().endsWith(".pmtiles"))return Alert.alert("Choose the UK map file","Please select uk.pmtiles from your Downloads folder.");
+    setMapImportBusy(true);
+    const target=FileSystem.documentDirectory+"uk.pmtiles";
+    const existing=await FileSystem.getInfoAsync(target);
+    if(existing.exists)await FileSystem.deleteAsync(target,{idempotent:true});
+    await FileSystem.copyAsync({from:file.uri,to:target});
+    const info=await FileSystem.getInfoAsync(target);
+    if(!info.exists||Number(info.size||0)<1000000000)throw new Error("The copied map file looks incomplete. Please try importing uk.pmtiles again.");
+    setOfflineMapPath(target);
+    await AsyncStorage.setItem("@jett_uk_pmtiles_path",target);
+    Alert.alert("UK map added","Jett Pal has saved the UK map on this phone. It can now be opened offline.");
+  }catch(error){Alert.alert("Map import failed",error.message||"Jett could not copy the map file.");}
+  finally{setMapImportBusy(false);}
+ }
+ const mapStyle=offlineMapPath?{
+  version:8,
+  sources:{uk:{type:"vector",url:"pmtiles://file://"+offlineMapPath,attribution:"© OpenStreetMap contributors · Quarry / Protomaps"}},
+  layers:[
+   {id:"background",type:"background",paint:{"background-color":"#e9eee8"}},
+   {id:"earth",type:"fill",source:"uk","source-layer":"earth",paint:{"fill-color":"#e9eee8"}},
+   {id:"landuse",type:"fill",source:"uk","source-layer":"landuse",paint:{"fill-color":"#dce8d6","fill-opacity":0.8}},
+   {id:"water",type:"fill",source:"uk","source-layer":"water",paint:{"fill-color":"#a9d4e8"}},
+   {id:"buildings",type:"fill",source:"uk","source-layer":"buildings",minzoom:13,paint:{"fill-color":"#d5cfc4","fill-outline-color":"#c3bcae"}},
+   {id:"roads",type:"line",source:"uk","source-layer":"roads",paint:{"line-color":"#ffffff","line-width":["interpolate",["linear"],["zoom"],5,0.5,10,1.2,14,3,16,5],"line-opacity":0.95}}
+  ]
+ }:null;
+ const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
+  <View style={s.card}>
+   <Text style={s.cardTitle}>WHOLE UK STREET MAP</Text>
+   <Text style={s.small}>{offlineMapPath?"UK map saved on this phone. The basemap can be used without mobile data.":"Import the uk.pmtiles file you downloaded. It will be copied into Jett's private storage."}</Text>
+   <Button title={mapImportBusy?"Importing UK map…":offlineMapPath?"Replace UK Offline Map":"Import uk.pmtiles from Downloads"} disabled={mapImportBusy} onPress={importOfflineUKMap}/>
+   {offlineMapPath?<Text style={[s.greenText,{marginTop:8}]}>✓ UK offline map installed in Jett Pal</Text>:null}
+  </View>
+  {offlineMapPath? <View style={{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
+   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
+    <MapCamera initialViewState={{center:[1.7,52.6],zoom:11}}/>
+   </MapLibreMap>
+   <View style={{position:"absolute",left:8,bottom:8,backgroundColor:"rgba(255,255,255,0.92)",paddingHorizontal:8,paddingVertical:5,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>© OpenStreetMap contributors · Quarry / Protomaps</Text></View>
+  </View>:<View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>Your UK map is ready to import</Text><Text style={s.small}>Once imported, Jett will display the saved UK map here.</Text></View>}
+  <Button title="Open Google Maps for navigation" onPress={()=>{if(stops.length)openNavigation(stops[stops.length-1],stops);else Alert.alert("No stops","Add stops first.");}} outline/>
+  {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
+ </ScrollView>;
  const completionScreen=()=>{const item=stops.find(x=>x.id===selectedDeliveryId);if(!item)return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><Text style={s.small}>No property selected. Return to Delivery Manager.</Text><Button title="Back to Delivery Manager" onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Delivery Report</Text><View style={s.card}><Text style={s.cardTitle}>{item.name}</Text><Text style={s.small}>{item.town} {item.postcode}</Text><Text style={[s.small,{marginTop:8}]}>Required: {Number(item.wheelieBins||0)} wheelie bins · {Number(item.foodCaddies||0)} food caddies</Text></View><Text style={s.cardTitle}>DELIVERY OUTCOME</Text>{["Delivered","Partially delivered","No access","Wrong address","Damaged item","Customer not home"].map(v=><TouchableOpacity key={v} style={s.preference} onPress={()=>setDeliveryOutcome(v)}><View style={[s.radio,{borderColor:deliveryOutcome===v?C.green:C.muted}]}>{deliveryOutcome===v&&<View style={s.radioInner}/>}</View><Text style={s.resultTitle}>{v}</Text></TouchableOpacity>)}<View style={s.card}><Text style={s.cardTitle}>ACTUALLY DELIVERED</Text><Text style={s.small}>Wheelie bins (max {Number(item.wheelieBins||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualWheelieQty} onChangeText={setActualWheelieQty} placeholder="Bins delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Food waste caddies (max {Number(item.foodCaddies||0)})</Text><TextInput style={s.input} keyboardType="number-pad" value={actualCaddyQty} onChangeText={setActualCaddyQty} placeholder="Caddies delivered" placeholderTextColor="#78939b"/><Text style={s.small}>Delivery notes / reason</Text><TextInput style={[s.input,{minHeight:100,textAlignVertical:"top"}]} multiline value={deliveryNotes} onChangeText={setDeliveryNotes} placeholder="Add details about the delivery or problem..." placeholderTextColor="#78939b"/></View><Button title="Save Delivery Report" onPress={saveCompletion}/><Button title="Cancel" outline onPress={()=>{setScreen("deliveries");setTab("Home");}}/></ScrollView>;};
  let body=screen==="home"?home():screen==="search"?searchScreen():screen==="details"?details():screen==="route"?route():screen==="deliveries"?deliveryScreen():screen==="completion"?completionScreen():screen==="stock"?stockScreen():screen==="saved"?savedScreen():screen==="performance"?performanceScreen():screen==="settings"?settingsScreen():mapScreen();
  return <SafeAreaView style={s.safe}>
