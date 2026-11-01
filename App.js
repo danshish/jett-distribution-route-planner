@@ -72,6 +72,23 @@ useEffect(() => {
 }, [splashOpacity]);
  useEffect(()=>{(async()=>{try{const [c,r,s,m,l]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
  useEffect(()=>{
+  const handleAuthUrl=async({url})=>{
+   if(!url||!supabase)return;
+   try{
+    const fragment=url.includes("#")?url.split("#")[1]:"";
+    const values={};
+    fragment.split("&").forEach(part=>{const bits=part.split("=");if(bits.length>1)values[decodeURIComponent(bits[0])]=decodeURIComponent(bits.slice(1).join("="));});
+    if(values.access_token&&values.refresh_token){
+     const {error}=await supabase.auth.setSession({access_token:values.access_token,refresh_token:values.refresh_token});
+     if(error)console.warn("Email confirmation session:",error.message);
+    }
+   }catch(error){console.warn("Auth callback:",error.message);}
+  };
+  Linking.getInitialURL().then(url=>{if(url)handleAuthUrl({url});});
+  const subscription=Linking.addEventListener("url",handleAuthUrl);
+  return ()=>subscription.remove();
+ },[]);
+ useEffect(()=>{
   if(!isSupabaseConfigured){setAuthLoading(false);return;}
   let mounted=true;
   supabase.auth.getSession().then(({data,error})=>{
@@ -91,7 +108,7 @@ useEffect(() => {
   setAuthBusy(true);
   try{
    if(authMode==="signup"){
-    const {data,error}=await supabase.auth.signUp({email,password:authPassword,options:{data:{full_name:authName.trim()}}});
+    const {data,error}=await supabase.auth.signUp({email,password:authPassword,options:{data:{full_name:authName.trim()},emailRedirectTo:Linking.createURL("auth/callback")}});
     if(error)throw error;
     if(data.session){setAuthSession(data.session);Alert.alert("Account created","Your Jett Pal account is ready. Your company workspace will be set up next.");}
     else Alert.alert("Check your email","Supabase has sent a confirmation link. Confirm your email, then return here and sign in.");
