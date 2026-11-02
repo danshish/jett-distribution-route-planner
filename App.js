@@ -10,7 +10,7 @@ import * as Location from "expo-location";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Path } from "react-native-svg";
-import { Map as MapLibreMap, Camera as MapCamera } from "@maplibre/maplibre-react-native";
+import { Map as MapLibreMap, Camera as MapCamera, PointAnnotation } from "@maplibre/maplibre-react-native";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
 const C={bg:"#06151d",panel:"#0b2631",panel2:"#103540",green:"#27c653",green2:"#7ad64f",text:"#f4fbf6",muted:"#9bb2b9",line:"#1a414a",blue:"#38a4ff",orange:"#ffad42",red:"#ff5367"};
@@ -280,7 +280,7 @@ async function choose(x){
     setBusy(false);
   }
 }
-function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),key:chosen.key,name:label.trim()||chosen.display_name,address:label.trim(),town:town.trim(),postcode:clean(pc),wheelieBins:Math.max(0,parseInt(wheelieQty,10)||0),foodCaddies:Math.max(0,parseInt(caddyQty,10)||0),done:false,deliveryOutcome:"Pending",deliveredWheelieBins:0,deliveredFoodCaddies:0,deliveryNotes:""}]);setWheelieQty("0");setCaddyQty("0");setChosen(null);setScreen("route");setTab("Route");}
+function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),key:chosen.key,name:label.trim()||chosen.display_name,address:label.trim(),town:town.trim(),postcode:clean(pc),lat:Number.isFinite(Number(chosen.lat))?Number(chosen.lat):null,lon:Number.isFinite(Number(chosen.lon))?Number(chosen.lon):null,wheelieBins:Math.max(0,parseInt(wheelieQty,10)||0),foodCaddies:Math.max(0,parseInt(caddyQty,10)||0),done:false,deliveryOutcome:"Pending",deliveredWheelieBins:0,deliveredFoodCaddies:0,deliveryNotes:""}]);setWheelieQty("0");setCaddyQty("0");setChosen(null);setScreen("route");setTab("Route");}
  function openCompletion(stop){setSelectedDeliveryId(stop.id);setDeliveryOutcome(stop.deliveryOutcome&&stop.deliveryOutcome!=="Pending"?stop.deliveryOutcome:"Delivered");setActualWheelieQty(String(stop.deliveredWheelieBins??stop.wheelieBins??0));setActualCaddyQty(String(stop.deliveredFoodCaddies??stop.foodCaddies??0));setDeliveryNotes(stop.deliveryNotes||"");setScreen("completion");setTab("Home");}
  function saveCompletion(){const bins=Math.max(0,parseInt(actualWheelieQty,10)||0),caddies=Math.max(0,parseInt(actualCaddyQty,10)||0);const selected=stops.find(x=>x.id===selectedDeliveryId);if(!selected)return Alert.alert("Delivery not found","Please return to the delivery list and try again.");if(bins>Number(selected.wheelieBins||0)||caddies>Number(selected.foodCaddies||0))return Alert.alert("Check quantities","The delivered quantity cannot be greater than the quantity required for this property.");const successful=deliveryOutcome==="Delivered"||deliveryOutcome==="Partially delivered";setStops(current=>current.map(x=>x.id===selectedDeliveryId?{...x,done:successful,deliveryOutcome,deliveredWheelieBins:successful?bins:0,deliveredFoodCaddies:successful?caddies:0,deliveryNotes:deliveryNotes.trim(),completedAt:successful?new Date().toISOString():null}:x));setScreen("deliveries");setTab("Home");Alert.alert("Delivery report saved","The property outcome and actual delivered quantities have been recorded.");}
 
@@ -474,7 +474,26 @@ async function importGoogleSheet(){
   await AsyncStorage.setItem("@jett_map_choice",choice);
  }
  
-function openNavigation(stop,routeStops=[stop]){
+async function locateRouteStops(){
+  const pending=stops.filter(x=>x.lat==null||x.lon==null);
+  if(!pending.length)return Alert.alert("All stops located","Every delivery stop already has map coordinates.");
+  if(!online)return Alert.alert("Internet needed","Connect to the internet once to locate these addresses. Saved coordinates will then work with your offline map.");
+  setBusy(true);let located=0,failed=0;let updated=[...stops];
+  try{
+   for(const stop of pending){
+    const q=[stop.address||stop.name,stop.town,stop.postcode].filter(Boolean).join(", ");
+    try{
+     const sr=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/search?q="+encodeURIComponent(q));const sd=await sr.json();const match=(sd.results||[]).find(x=>x.udprn);if(!sr.ok||!sd.success||!match)throw new Error("No address match");
+     const rr=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/resolve?udprn="+encodeURIComponent(String(match.udprn)));const rd=await rr.json();const a=rd.results?.[0];const lat=Number(a?.latitude),lon=Number(a?.longitude);if(!rr.ok||!rd.success||!Number.isFinite(lat)||!Number.isFinite(lon))throw new Error("No coordinates");
+     updated=updated.map(x=>x.id===stop.id?{...x,lat,lon}:x);located++;
+    }catch{failed++;}
+   }
+   setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));
+   Alert.alert("Address locating finished",located+" stops placed on the map"+(failed?", "+failed+" could not be matched.":"."));
+  }finally{setBusy(false);}
+ }
+
+ function openNavigation(stop,routeStops=[stop]){
   const addressFor=x=>[x.address||x.name,x.town,x.postcode].filter(Boolean).join(", ");
   const startValue=startPoint?(Number.isFinite(Number(startPoint.lat))&&Number.isFinite(Number(startPoint.lon))?startPoint.lat+","+startPoint.lon:startPoint.displayName):addressFor(routeStops[0]);
   const origin=encodeURIComponent(startValue);
@@ -1011,7 +1030,7 @@ function openNavigation(stop,routeStops=[stop]){
     <View style={{flex:1}}><Text style={s.resultTitle}>{stop.name||stop.address}</Text><Text style={s.small}>{[stop.town,stop.postcode].filter(Boolean).join(" ")}</Text></View>
     <Text style={[s.small,{color:stop.done?C.green:C.orange}]}>{stop.done?"Done":"Pending"}</Text>
    </View>):<Text style={s.small}>Import a delivery list or add addresses to see your stops here.</Text>}
-   <Text style={[s.small,{marginTop:10}]}>Map pins will appear for stops with saved coordinates. Imported spreadsheet addresses still need coordinates before they can be placed accurately on the map.</Text>
+   <Text style={[s.small,{marginTop:10}]}>Located stops: {stops.filter(x=>x.lat!=null&&x.lon!=null).length} of {stops.length}</Text><Button title={busy?"Locating addresses…":"Find coordinates for delivery stops"} disabled={busy||!stops.length} onPress={locateRouteStops} outline/>
   </View>
   <View style={s.card}>
    <Text style={s.cardTitle}>WHOLE UK STREET MAP</Text>
@@ -1027,7 +1046,8 @@ function openNavigation(stop,routeStops=[stop]){
     onDidFinishLoadingMap={()=>setMapLoadStatus("Map style loaded. Checking map tiles…")}
     onDidFailLoadingMap={()=>setMapLoadStatus("Map style failed to load. The diagnostic build has detected a map loading error.")}
     onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
-    <MapCamera initialViewState={{center:[1.7,52.6],zoom:11}}/>
+    <MapCamera initialViewState={{center:stops.find(x=>x.lat!=null&&x.lon!=null)?[Number(stops.find(x=>x.lat!=null&&x.lon!=null).lon),Number(stops.find(x=>x.lat!=null&&x.lon!=null).lat)]:[1.7,52.6],zoom:stops.some(x=>x.lat!=null&&x.lon!=null)?14:11}}/>
+     {stops.filter(x=>x.lat!=null&&x.lon!=null).map((stop,index)=><PointAnnotation key={stop.id} id={String(stop.id)} coordinate={[Number(stop.lon),Number(stop.lat)]}><View style={{width:30,height:30,borderRadius:15,backgroundColor:C.green,borderWidth:2,borderColor:"#ffffff",alignItems:"center",justifyContent:"center"}}><Text style={{color:"#062010",fontWeight:"900",fontSize:12}}>{index+1}</Text></View></PointAnnotation>)}
    </MapLibreMap>
    <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus}</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>© OpenStreetMap contributors · Quarry / Protomaps</Text></View>
   </View>:<View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>Your UK map is ready to import</Text><Text style={s.small}>Once imported, Jett will display the saved UK map here.</Text></View>}
