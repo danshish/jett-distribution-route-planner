@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - feature/offline-valhalla-native
 
 jobs:
   build:
