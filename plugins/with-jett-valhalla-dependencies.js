@@ -4,7 +4,10 @@ const {
   withProjectBuildGradle,
 } = require("@expo/config-plugins");
 
-const KOTLIN_VERSION = "2.3.0";
+// SDK 54 has an Expo KSP lookup table for Kotlin 2.2.20, but its
+// Kotlin compiler classpath must be pinned separately for Kotlin 2.3 metadata.
+const EXPO_KOTLIN_VERSION = "2.2.20";
+const COMPILER_KOTLIN_VERSION = "2.3.0";
 
 module.exports = function withJettValhallaDependencies(config) {
   config = withGradleProperties(config, (mod) => {
@@ -13,20 +16,22 @@ module.exports = function withJettValhallaDependencies(config) {
       (item) => item.type === "property" && item.key === "android.kotlinVersion"
     );
     if (existing) {
-      existing.value = KOTLIN_VERSION;
+      existing.value = EXPO_KOTLIN_VERSION;
     } else {
-      props.push({ type: "property", key: "android.kotlinVersion", value: KOTLIN_VERSION });
+      props.push({
+        type: "property",
+        key: "android.kotlinVersion",
+        value: EXPO_KOTLIN_VERSION,
+      });
     }
     return mod;
   });
 
-  // Expo/RN can still resolve the Kotlin Gradle plugin from its buildscript
-  // classpath, so pin that plugin as well as the generated Gradle property.
   config = withProjectBuildGradle(config, (mod) => {
     let contents = mod.modResults.contents;
     contents = contents.replace(
       /org\.jetbrains\.kotlin:kotlin-gradle-plugin(?::[0-9.]+)?/g,
-      "org.jetbrains.kotlin:kotlin-gradle-plugin:" + KOTLIN_VERSION
+      "org.jetbrains.kotlin:kotlin-gradle-plugin:" + COMPILER_KOTLIN_VERSION
     );
     mod.modResults.contents = contents;
     return mod;
