@@ -177,10 +177,11 @@ module.exports = function withJettValhallaDependencies(config) {
       );
     }
 
-    // Force every app JavaCompile task to Java 21. Expo/AGP can otherwise
-    // retain the default Java 17 task target even when android.compileOptions changes.
-    if (!contents.includes("tasks.withType(org.gradle.api.tasks.compile.JavaCompile)")) {
-      contents += `\n\ntasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {\n    sourceCompatibility = JavaVersion.VERSION_21.toString()\n    targetCompatibility = JavaVersion.VERSION_21.toString()\n}\n`;
+    // AGP applies its Java 17 defaults after the Android DSL is evaluated in
+    // this Expo-generated project. Re-apply the target after every project has
+    // finished evaluation so the actual JavaCompile tasks use Java 21.
+    if (!contents.includes("gradle.projectsEvaluated")) {
+      contents += `\n\ngradle.projectsEvaluated {\n    tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {\n        sourceCompatibility = JavaVersion.VERSION_21.toString()\n        targetCompatibility = JavaVersion.VERSION_21.toString()\n    }\n}\n`;
     }
 
     mod.modResults.contents = contents;
