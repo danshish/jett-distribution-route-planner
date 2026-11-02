@@ -133,7 +133,7 @@ module.exports = function withJettValhallaDependencies(config) {
   config = withProjectBuildGradle(config, (mod) => {
     let contents = mod.modResults.contents;
     contents = contents.replace(
-      /org\\.jetbrains\\.kotlin:kotlin-gradle-plugin(?::[0-9.]+)?/g,
+      /org\.jetbrains\.kotlin:kotlin-gradle-plugin(?::[0-9.]+)?/g,
       "org.jetbrains.kotlin:kotlin-gradle-plugin:" + COMPILER_KOTLIN_VERSION
     );
     mod.modResults.contents = contents;
@@ -144,9 +144,9 @@ module.exports = function withJettValhallaDependencies(config) {
     let contents = mod.modResults.contents;
     const dependency = "implementation 'io.github.rallista:valhalla-mobile:0.6.4'";
     if (!contents.includes(dependency)) {
-      const block = /dependencies\\s*\\{/;
+      const block = /dependencies\s*\{/;
       if (!block.test(contents)) throw new Error("Jett Valhalla: could not find Android dependencies block");
-      contents = contents.replace(block, (match) => match + "\\n    " + dependency);
+      contents = contents.replace(block, (match) => match + "\n    " + dependency);
     }
     mod.modResults.contents = contents;
     return mod;
@@ -160,7 +160,7 @@ module.exports = function withJettValhallaDependencies(config) {
       if (!contents.includes(marker)) {
         throw new Error("Jett Valhalla: could not find MainApplication package registration block");
       }
-      contents = contents.replace(marker, marker + "\\n          " + registration);
+      contents = contents.replace(marker, marker + "\n          " + registration);
     }
     mod.modResults.contents = contents;
     return mod;
