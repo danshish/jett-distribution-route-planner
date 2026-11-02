@@ -157,7 +157,14 @@ module.exports = function withJettValhallaDependencies(config) {
         match + "\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21"
       );
     } else {
-      throw new Error("Jett Valhalla: could not find Android compileOptions block");
+      const androidBlock = /android\s*\{/;
+      if (!androidBlock.test(contents)) {
+        throw new Error("Jett Valhalla: could not find Android block for Java 21 settings");
+      }
+      contents = contents.replace(
+        androidBlock,
+        (match) => match + "\n    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21\n    }"
+      );
     }
 
     const kotlinOptions = /kotlinOptions\s*\{/;
