@@ -63,6 +63,15 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install --non-interactive
 
+      - name: Diagnose generated Gradle JVM targets
+        run: |
+          echo "=== Generated app/build.gradle ==="
+          sed -n '1,260p' android/app/build.gradle
+          echo "=== Generated root build.gradle ==="
+          sed -n '1,220p' android/build.gradle
+          echo "=== All generated JVM target declarations ==="
+          grep -RniE 'sourceCompatibility|targetCompatibility|jvmTarget|JavaCompile|kotlinOptions|compilerOptions' android --include='*.gradle' --include='*.gradle.kts' || true
+
       - name: Build APK
         run: |
           cd android
