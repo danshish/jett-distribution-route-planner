@@ -10,7 +10,7 @@ import * as Location from "expo-location";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Path } from "react-native-svg";
-import { Map as MapLibreMap, Camera as MapCamera, PointAnnotation } from "@maplibre/maplibre-react-native";
+import { Map as MapLibreMap, Camera as MapCamera } from "@maplibre/maplibre-react-native";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
 const C={bg:"#06151d",panel:"#0b2631",panel2:"#103540",green:"#27c653",green2:"#7ad64f",text:"#f4fbf6",muted:"#9bb2b9",line:"#1a414a",blue:"#38a4ff",orange:"#ffad42",red:"#ff5367"};
@@ -1047,7 +1047,6 @@ async function locateRouteStops(){
     onDidFailLoadingMap={()=>setMapLoadStatus("Map style failed to load. The diagnostic build has detected a map loading error.")}
     onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
     <MapCamera initialViewState={{center:stops.find(x=>x.lat!=null&&x.lon!=null)?[Number(stops.find(x=>x.lat!=null&&x.lon!=null).lon),Number(stops.find(x=>x.lat!=null&&x.lon!=null).lat)]:[1.7,52.6],zoom:stops.some(x=>x.lat!=null&&x.lon!=null)?14:11}}/>
-     {stops.filter(x=>x.lat!=null&&x.lon!=null).map((stop,index)=><PointAnnotation key={stop.id} id={String(stop.id)} coordinate={[Number(stop.lon),Number(stop.lat)]}><View style={{width:30,height:30,borderRadius:15,backgroundColor:C.green,borderWidth:2,borderColor:"#ffffff",alignItems:"center",justifyContent:"center"}}><Text style={{color:"#062010",fontWeight:"900",fontSize:12}}>{index+1}</Text></View></PointAnnotation>)}
    </MapLibreMap>
    <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus}</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>© OpenStreetMap contributors · Quarry / Protomaps</Text></View>
   </View>:<View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>Your UK map is ready to import</Text><Text style={s.small}>Once imported, Jett will display the saved UK map here.</Text></View>}
