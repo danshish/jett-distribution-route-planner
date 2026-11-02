@@ -148,6 +148,28 @@ module.exports = function withJettValhallaDependencies(config) {
       if (!block.test(contents)) throw new Error("Jett Valhalla: could not find Android dependencies block");
       contents = contents.replace(block, (match) => match + "\n    " + dependency);
     }
+
+    // The published wrapper AAR contains Java 21 bytecode (class version 65).
+    // Compile the app sources with Java 21 so javac can read the wrapper API.
+    const compileOptions = /compileOptions\s*\{/;
+    if (compileOptions.test(contents)) {
+      contents = contents.replace(compileOptions, (match) =>
+        match + "\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21"
+      );
+    } else {
+      throw new Error("Jett Valhalla: could not find Android compileOptions block");
+    }
+
+    const kotlinOptions = /kotlinOptions\s*\{/;
+    if (kotlinOptions.test(contents)) {
+      contents = contents.replace(kotlinOptions, (match) => match + '\n        jvmTarget = "21"');
+    } else {
+      contents = contents.replace(
+        /android\s*\{/,
+        (match) => match + '\n    kotlinOptions { jvmTarget = "21" }'
+      );
+    }
+
     mod.modResults.contents = contents;
     return mod;
   });
