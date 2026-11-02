@@ -285,15 +285,24 @@ function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),ke
  function saveCompletion(){const bins=Math.max(0,parseInt(actualWheelieQty,10)||0),caddies=Math.max(0,parseInt(actualCaddyQty,10)||0);const selected=stops.find(x=>x.id===selectedDeliveryId);if(!selected)return Alert.alert("Delivery not found","Please return to the delivery list and try again.");if(bins>Number(selected.wheelieBins||0)||caddies>Number(selected.foodCaddies||0))return Alert.alert("Check quantities","The delivered quantity cannot be greater than the quantity required for this property.");const successful=deliveryOutcome==="Delivered"||deliveryOutcome==="Partially delivered";setStops(current=>current.map(x=>x.id===selectedDeliveryId?{...x,done:successful,deliveryOutcome,deliveredWheelieBins:successful?bins:0,deliveredFoodCaddies:successful?caddies:0,deliveryNotes:deliveryNotes.trim(),completedAt:successful?new Date().toISOString():null}:x));setScreen("deliveries");setTab("Home");Alert.alert("Delivery report saved","The property outcome and actual delivered quantities have been recorded.");}
 
 async function importDeliveryFile(){
+  setBusy(true);
   try{
+    // Android file providers report Excel files with inconsistent MIME types.
+    // Use a broad picker filter, then validate the selected file ourselves.
     const picked=await DocumentPicker.getDocumentAsync({
-      type:["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-excel","text/csv","text/comma-separated-values"],
+      type:"*/*",
       copyToCacheDirectory:true,
       multiple:false
     });
     if(picked.canceled||!picked.assets?.length)return;
     const file=picked.assets[0];
+    if(!file?.uri)throw new Error("Android did not provide a readable file location.");
+    const fileName=String(file.name||"delivery-list").toLowerCase();
+    if(!/\.(xlsx|xls|csv)$/i.test(fileName)){
+      throw new Error("Please choose an Excel .xlsx/.xls file or a .csv file. The selected file was: "+(file.name||"unknown"));
+    }
     const base64=await FileSystem.readAsStringAsync(file.uri,{encoding:"base64"});
+    if(!base64)throw new Error("The selected file appears to be empty or Android could not read it.");
     const workbook=XLSX.read(base64,{type:"base64"});
     const firstSheet=workbook.Sheets[workbook.SheetNames[0]];
     if(!firstSheet)throw new Error("The selected file has no worksheet.");
@@ -332,10 +341,11 @@ async function importDeliveryFile(){
     setTab("Route");
     Alert.alert("Delivery list imported",imported.length+" stops added from "+file.name+". Please check the addresses before navigating.");
   }catch(error){
-    Alert.alert("Import failed",error.message||"Jett could not read that file. Please try an Excel .xlsx or CSV .csv file.");
+    Alert.alert("Import failed",error?.message||"Jett could not read that file. Please try an Excel .xlsx or CSV .csv file.");
+  }finally{
+    setBusy(false);
   }
 }
-
 
 async function importGoogleSheet(){
   const link=googleSheetUrl.trim();
