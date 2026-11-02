@@ -24,6 +24,7 @@ export default function App(){
  const [authSession,setAuthSession]=useState(null),[authLoading,setAuthLoading]=useState(true);
  const [authMode,setAuthMode]=useState("signin"),[authEmail,setAuthEmail]=useState(""),[authPassword,setAuthPassword]=useState(""),[authConfirmPassword,setAuthConfirmPassword]=useState(""),[authName,setAuthName]=useState(""),[authBusy,setAuthBusy]=useState(false);
  const [showAuthPassword,setShowAuthPassword]=useState(false),[showConfirmPassword,setShowConfirmPassword]=useState(false),[showRecoveryPassword,setShowRecoveryPassword]=useState(false);
+ const [profileName,setProfileName]=useState(""),[currentPassword,setCurrentPassword]=useState(""),[settingsNewPassword,setSettingsNewPassword]=useState(""),[settingsConfirmPassword,setSettingsConfirmPassword]=useState("");
  const [authRecovery,setAuthRecovery]=useState(false),[authNewPassword,setAuthNewPassword]=useState("");
  const [stops,setStops]=useState([]),[cache,setCache]=useState({}),[saved,setSaved]=useState([]);
  const [stockLoaded,setStockLoaded]=useState({wheelieBins:0,foodCaddies:0});
@@ -164,6 +165,35 @@ useEffect(() => {
   if(!supabase)return;
   const {error}=await supabase.auth.signOut();
   if(error)Alert.alert("Sign-out failed",error.message);
+ }
+ async function saveProfile(){
+  if(!supabase||!authSession)return;
+  const name=profileName.trim();
+  if(!name)return Alert.alert("Enter your name","Please enter your full name.");
+  setAuthBusy(true);
+  try{
+   const {data,error}=await supabase.auth.updateUser({data:{full_name:name}});
+   if(error)throw error;
+   setAuthSession(data.user?{...authSession,user:data.user}:authSession);
+   Alert.alert("Profile updated","Your name has been saved.");
+  }catch(error){Alert.alert("Could not update profile",error.message||"Please try again.");}
+  finally{setAuthBusy(false);}
+ }
+ async function changeAccountPassword(){
+  if(!supabase||!authSession?.user?.email)return;
+  if(!currentPassword||!settingsNewPassword||!settingsConfirmPassword)return Alert.alert("Complete the form","Enter your current password and your new password twice.");
+  if(settingsNewPassword.length<8)return Alert.alert("Password too short","Use at least 8 characters.");
+  if(settingsNewPassword!==settingsConfirmPassword)return Alert.alert("Passwords do not match","The new passwords must match.");
+  setAuthBusy(true);
+  try{
+   const {error:verifyError}=await supabase.auth.signInWithPassword({email:authSession.user.email,password:currentPassword});
+   if(verifyError)throw new Error("Your current password was not accepted. Check it and try again.");
+   const {error}=await supabase.auth.updateUser({password:settingsNewPassword});
+   if(error)throw error;
+   setCurrentPassword("");setSettingsNewPassword("");setSettingsConfirmPassword("");
+   Alert.alert("Password changed","Your Jett Pal password has been updated.");
+  }catch(error){Alert.alert("Could not change password",error.message||"Please try again.");}
+  finally{setAuthBusy(false);}
  }
  useEffect(()=>{AsyncStorage.getItem("@jett_uk_pmtiles_path").then(p=>{if(p)setOfflineMapPath(p);}).catch(()=>{});},[]);
  useEffect(()=>{(async()=>{try{const raw=await AsyncStorage.getItem("@jett_drivers");if(raw){const data=JSON.parse(raw);setDrivers(data.drivers||[]);setActiveDriverId(data.activeDriverId||"");}}catch{}})();},[]);
@@ -897,7 +927,7 @@ function openNavigation(stop,routeStops=[stop]){
   </ScrollView>;
  };
  const savedScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Saved Routes</Text>{saved.length===0?<View style={s.card}><Text style={s.small}>No saved routes yet. Save a route to keep it on your phone.</Text></View>:saved.map(r=><View key={r.id} style={s.card}><Text style={s.cardTitle}>{r.name}</Text><Text style={s.small}>{r.stops.length} stops · {Number(r.miles||0).toFixed(1)} miles</Text><Button title="Load Route" onPress={()=>{setStops(r.stops);setScreen("route");setTab("Route");}}/></View>)}</ScrollView>;
- const settingsScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Settings</Text><View style={s.card}><Text style={s.cardTitle}>Jett Pal Account</Text>{authSession?<><Text style={s.small}>Signed in as {authSession.user?.email||"Jett Pal user"}</Text><Button title="Sign out" outline onPress={()=>Alert.alert("Sign out?","You will need to sign in again to access Jett Pal.",[{text:"Cancel",style:"cancel"},{text:"Sign out",style:"destructive",onPress:signOut}])}/></>:<><Text style={s.small}>You are not signed in. Sign in to access your Jett Pal account.</Text><Button title="Go to sign in" onPress={()=>{setAuthMode("signin");setScreen("home");}}/></>}</View><Text style={[s.title,{marginTop:18}]}>Navigation Settings</Text><View style={s.card}><Text style={s.cardTitle}>Preferred map app</Text><Text style={s.small}>Choose which app to use when you start a route. You can also choose each time you navigate.</Text>{[["google","Google Maps"],["apple","Apple Maps"]].map(([v,t])=><TouchableOpacity key={v} style={s.preference} onPress={()=>setMapPreference(v)}><View style={[s.radio,{borderColor:mapChoice===v?C.green:C.muted}]}>{mapChoice===v&&<View style={s.radioInner}/>}</View><View style={{flex:1}}><Text style={s.resultTitle}>{t}</Text><Text style={s.small}>{v==="google"?"Works on Android and iPhone":"Available on Apple devices; on Android this may open in a browser or may not be supported"}</Text></View></TouchableOpacity>)}<Button title="Ask me every time" onPress={()=>setMapPreference("ask") } outline/><Text style={[s.small,{marginTop:10}]}>Note: Apple Maps is not normally installed on Android phones. On your Moto G17, Google Maps is the reliable option; Apple Maps links may open in a browser or may not work as expected.</Text></View></ScrollView>;
+ const settingsScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Settings</Text><View style={s.card}><Text style={s.cardTitle}>Jett Pal Account</Text>{authSession?<><Text style={s.small}>Signed in as {authSession.user?.email||"Jett Pal user"}</Text><Text style={s.small}>Full name</Text><TextInput style={s.input} value={profileName||authSession.user?.user_metadata?.full_name||""} onChangeText={setProfileName} placeholder="Your full name" placeholderTextColor="#78939b" autoCapitalize="words"/><Button title="Save profile" onPress={saveProfile} disabled={authBusy}/><Text style={[s.cardTitle,{marginTop:20}]}>Change password</Text><Text style={s.small}>Confirm your current password, then enter your new password twice.</Text><TextInput style={s.input} value={currentPassword} onChangeText={setCurrentPassword} placeholder="Current password" placeholderTextColor="#78939b" secureTextEntry autoCapitalize="none"/><TextInput style={s.input} value={settingsNewPassword} onChangeText={setSettingsNewPassword} placeholder="New password (at least 8 characters)" placeholderTextColor="#78939b" secureTextEntry autoCapitalize="none"/><TextInput style={s.input} value={settingsConfirmPassword} onChangeText={setSettingsConfirmPassword} placeholder="Confirm new password" placeholderTextColor="#78939b" secureTextEntry autoCapitalize="none"/><Button title="Update password" onPress={changeAccountPassword} disabled={authBusy}/><Button title="Sign out" outline onPress={()=>Alert.alert("Sign out?","You will need to sign in again to access Jett Pal.",[{text:"Cancel",style:"cancel"},{text:"Sign out",style:"destructive",onPress:signOut}])}/></>:<><Text style={s.small}>You are not signed in. Sign in to access your Jett Pal account.</Text><Button title="Go to sign in" onPress={()=>{setAuthMode("signin");setScreen("home");}}/></>}</View><Text style={[s.title,{marginTop:18}]}>Navigation Settings</Text><View style={s.card}><Text style={s.cardTitle}>Preferred map app</Text><Text style={s.small}>Choose which app to use when you start a route. You can also choose each time you navigate.</Text>{[["google","Google Maps"],["apple","Apple Maps"]].map(([v,t])=><TouchableOpacity key={v} style={s.preference} onPress={()=>setMapPreference(v)}><View style={[s.radio,{borderColor:mapChoice===v?C.green:C.muted}]}>{mapChoice===v&&<View style={s.radioInner}/>}</View><View style={{flex:1}}><Text style={s.resultTitle}>{t}</Text><Text style={s.small}>{v==="google"?"Works on Android and iPhone":"Available on Apple devices; on Android this may open in a browser or may not be supported"}</Text></View></TouchableOpacity>)}<Button title="Ask me every time" onPress={()=>setMapPreference("ask") } outline/><Text style={[s.small,{marginTop:10}]}>Note: Apple Maps is not normally installed on Android phones. On your Moto G17, Google Maps is the reliable option; Apple Maps links may open in a browser or may not work as expected.</Text></View></ScrollView>;
  async function saveOfflineMapFile(fromUri){
   const target=FileSystem.documentDirectory+"uk.pmtiles";
   const existing=await FileSystem.getInfoAsync(target);
