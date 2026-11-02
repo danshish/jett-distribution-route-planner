@@ -490,6 +490,7 @@ function openNavigation(stop,routeStops=[stop]){
     [
       {text:"Google Maps",onPress:()=>{setMapPreference("google");if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");Linking.openURL(googleUrl).catch(()=>Alert.alert("Unable to open","Google Maps could not be opened."));}},
       {text:"Multi Stop Maps",onPress:()=>{setMapPreference("google");if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");Linking.openURL(googleUrl).catch(()=>Alert.alert("Unable to open maps","Android could not open the multi-stop directions link. Please check that a browser or Google Maps is installed."));}},
+      ...(offlineMapPath?[{text:"Offline Map",onPress:()=>{setMapPreference("offline");setScreen("map");setTab("Map");}}]:[]),
       {text:"Apple Maps",onPress:()=>{setMapPreference("apple");const appleUrl="https://maps.apple.com/?saddr="+origin+"&daddr="+destination+(intermediate.length?"&waypoints="+encodeURIComponent(intermediate.join("|")):"")+"&dirflg=d";Linking.openURL(appleUrl).catch(()=>Alert.alert("Unable to open","Apple Maps could not be opened on this device."));}},
       {text:"Cancel",style:"cancel"}
     ]
@@ -1002,6 +1003,16 @@ function openNavigation(stop,routeStops=[stop]){
   ]
  }:null;
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
+  <View style={s.card}>
+   <Text style={s.cardTitle}>CURRENT DELIVERY ROUTE</Text>
+   <Text style={s.small}>{stops.length} imported stops · numbered in delivery order</Text>
+   {stops.length?stops.map((stop,index)=><View key={stop.id} style={s.stop}>
+    <View style={s.number}><Text style={s.numberText}>{index+1}</Text></View>
+    <View style={{flex:1}}><Text style={s.resultTitle}>{stop.name||stop.address}</Text><Text style={s.small}>{[stop.town,stop.postcode].filter(Boolean).join(" ")}</Text></View>
+    <Text style={[s.small,{color:stop.done?C.green:C.orange}]}>{stop.done?"Done":"Pending"}</Text>
+   </View>):<Text style={s.small}>Import a delivery list or add addresses to see your stops here.</Text>}
+   <Text style={[s.small,{marginTop:10}]}>Map pins will appear for stops with saved coordinates. Imported spreadsheet addresses still need coordinates before they can be placed accurately on the map.</Text>
+  </View>
   <View style={s.card}>
    <Text style={s.cardTitle}>WHOLE UK STREET MAP</Text>
    <Text style={s.small}>{offlineMapPath?"Your UK map is saved on this phone and available offline.":"Download the whole UK street map inside Jett Pal, or import a file you already have."}</Text>
