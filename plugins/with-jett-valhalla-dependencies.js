@@ -1,8 +1,9 @@
 const { withAppBuildGradle } = require("@expo/config-plugins");
 
 const dependencies = [
+  // The mobile wrapper already packages the matching Valhalla engine.
+  // Adding the engine AAR separately duplicates Java classes and native .so files.
   "implementation 'io.github.rallista:valhalla-mobile:0.6.4'",
-  "implementation 'ai.mapmap:valhalla-engine:3.9.1-1'",
 ];
 
 module.exports = function withJettValhallaDependencies(config) {
