@@ -52,6 +52,7 @@ export default function App(){
  const [mapChoice,setMapChoice]=useState("google");
  const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
+ const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
@@ -1026,7 +1027,15 @@ async function locateRouteStops(){
  const mapCenter=mapBounds?[(mapBounds.minLon+mapBounds.maxLon)/2,(mapBounds.minLat+mapBounds.maxLat)/2]:[1.7,52.6];
  const mapSpan=mapBounds?Math.max(mapBounds.maxLon-mapBounds.minLon,(mapBounds.maxLat-mapBounds.minLat)*1.4,0.008):1;
  const mapZoom=mapBounds?Math.max(5,Math.min(14,Math.floor(Math.log2(360/mapSpan))-1)):11;
+ const nextOfflineStop=stops.find(x=>!x.done);
+ const distanceToNext=driverPosition&&nextOfflineStop&&nextOfflineStop.lat!=null&&nextOfflineStop.lon!=null?(()=>{const rad=v=>v*Math.PI/180;const dLat=rad(Number(nextOfflineStop.lat)-driverPosition.latitude),dLon=rad(Number(nextOfflineStop.lon)-driverPosition.longitude);const a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(Number(nextOfflineStop.lat)))*Math.sin(dLon/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));})():null;
+ async function startOfflineRoute(){if(!offlineMapPath)return Alert.alert("Offline map required","Download or import the UK map first.");if(!stops.length)return Alert.alert("No stops","Import a delivery list first.");if(stops.some(x=>x.lat==null||x.lon==null))return Alert.alert("Locate stops first","Connect to the internet and find coordinates for every stop.");try{const p=await Location.requestForegroundPermissionsAsync();if(p.status!=="granted")return Alert.alert("Location permission needed","Allow location access while using Jett Pal.");const pos=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.Balanced});setDriverPosition(pos.coords);setOfflineNavActive(true);Alert.alert("Offline route started","Next stop: "+(nextOfflineStop?.name||nextOfflineStop?.address||"next delivery")+". This first stage shows straight-line distance, not road directions.");}catch(e){Alert.alert("Location unavailable",e.message||"Check that phone location is switched on.");}}
+ async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));}
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
+  <View style={s.card}>
+   <Text style={s.cardTitle}>OFFLINE NAVIGATION — FIRST STAGE</Text>
+   {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>This is GPS progress only. Offline road routing and turn-by-turn instructions are still being developed.</Text><Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title="Start Offline Route" onPress={startOfflineRoute}/></>}
+  </View>
   <View style={s.card}>
    <Text style={s.cardTitle}>CURRENT DELIVERY ROUTE</Text>
    <Text style={s.small}>{stops.length} imported stops · numbered in delivery order</Text>
