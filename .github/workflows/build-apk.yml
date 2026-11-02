@@ -42,6 +42,21 @@ jobs:
             exit 1
           fi
 
+      - name: Inspect Valhalla wrapper and dependency metadata
+        run: |
+          mkdir -p /tmp/valhalla-check
+          curl -fL --retry 3 -o /tmp/valhalla-check/mobile.aar https://repo.maven.apache.org/maven2/io/github/rallista/valhalla-mobile/0.6.4/valhalla-mobile-0.6.4.aar
+          curl -fL --retry 3 -o /tmp/valhalla-check/mobile.pom https://repo.maven.apache.org/maven2/io/github/rallista/valhalla-mobile/0.6.4/valhalla-mobile-0.6.4.pom
+          curl -fL --retry 3 -o /tmp/valhalla-check/engine.pom https://repo.maven.apache.org/maven2/ai/mapmap/valhalla-engine/3.9.1-1/valhalla-engine-3.9.1-1.pom
+          echo "=== Valhalla Mobile POM ==="
+          cat /tmp/valhalla-check/mobile.pom
+          echo "=== Valhalla Engine POM ==="
+          cat /tmp/valhalla-check/engine.pom
+          echo "=== Wrapper AAR classes ==="
+          unzip -l /tmp/valhalla-check/mobile.aar
+          unzip -p /tmp/valhalla-check/mobile.aar classes.jar > /tmp/valhalla-check/mobile-classes.jar
+          jar tf /tmp/valhalla-check/mobile-classes.jar | grep -E 'Valhalla.class|ValhallaConfigFactory.class|ValhallaResponse' || true
+
       - name: Install dependencies
         run: npm install
 
