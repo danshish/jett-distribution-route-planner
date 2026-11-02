@@ -10,7 +10,7 @@ import * as Location from "expo-location";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Path } from "react-native-svg";
-import { Map as MapLibreMap, Camera as MapCamera } from "@maplibre/maplibre-react-native";
+import { Map as MapLibreMap, Camera as MapCamera, GeoJSONSource, Layer } from "@maplibre/maplibre-react-native";
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
 const C={bg:"#06151d",panel:"#0b2631",panel2:"#103540",green:"#27c653",green2:"#7ad64f",text:"#f4fbf6",muted:"#9bb2b9",line:"#1a414a",blue:"#38a4ff",orange:"#ffad42",red:"#ff5367"};
@@ -1047,6 +1047,10 @@ async function locateRouteStops(){
     onDidFailLoadingMap={()=>setMapLoadStatus("Map style failed to load. The diagnostic build has detected a map loading error.")}
     onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
     <MapCamera initialViewState={{center:stops.find(x=>x.lat!=null&&x.lon!=null)?[Number(stops.find(x=>x.lat!=null&&x.lon!=null).lon),Number(stops.find(x=>x.lat!=null&&x.lon!=null).lat)]:[1.7,52.6],zoom:stops.some(x=>x.lat!=null&&x.lon!=null)?14:11}}/>
+     <GeoJSONSource id="delivery-stops" data={{type:"FeatureCollection",features:stops.filter(x=>x.lat!=null&&x.lon!=null).map((stop,index)=>({type:"Feature",id:String(stop.id||index),properties:{order:String(index+1)},geometry:{type:"Point",coordinates:[Number(stop.lon),Number(stop.lat)]}}))}}>
+      <Layer id="delivery-stop-circles" type="circle" paint={{"circle-radius":15,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
+      <Layer id="delivery-stop-numbers" type="symbol" layout={{"text-field":["get","order"],"text-font":["Noto Sans Regular"],"text-size":12,"text-allow-overlap":true}} paint={{"text-color":"#062010"}}/>
+     </GeoJSONSource>
    </MapLibreMap>
    <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus}</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>© OpenStreetMap contributors · Quarry / Protomaps</Text></View>
   </View>:<View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>Your UK map is ready to import</Text><Text style={s.small}>Once imported, Jett will display the saved UK map here.</Text></View>}
