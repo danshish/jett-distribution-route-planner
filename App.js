@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
+import { NativeModules } from "react-native";
 import { Alert, Animated, FlatList, Image, Linking, Platform, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
@@ -51,6 +52,7 @@ export default function App(){
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Pal Delivery Route");
  const [mapChoice,setMapChoice]=useState("google");
  const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
+ const [valhallaTilesPath,setValhallaTilesPath]=useState(null),[offlineDirections,setOfflineDirections]=useState([]),[offlineRouteBusy,setOfflineRouteBusy]=useState(false);
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
@@ -74,7 +76,7 @@ useEffect(() => {
 
   return () => clearTimeout(timer);
 }, [splashOpacity]);
- useEffect(()=>{(async()=>{try{const [c,r,s,m,l]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
+ useEffect(()=>{(async()=>{try{const [c,r,s,m,l,vt,mp]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded"),AsyncStorage.getItem("@jett_valhalla_tiles_path"),AsyncStorage.getItem("@jett_uk_pmtiles_path")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));if(vt)setValhallaTilesPath(vt);if(mp)setOfflineMapPath(mp);}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
  useEffect(()=>{
   const handleAuthUrl=async({url})=>{
    if(!url||!supabase)return;
@@ -981,6 +983,34 @@ async function locateRouteStops(){
   }catch(error){Alert.alert("Map import failed",error.message||"Jett could not copy the map file.");}
   finally{setMapImportBusy(false);}
  }
+ async function importValhallaTiles(){
+  try{
+   const picked=await DocumentPicker.getDocumentAsync({type:"*/*",copyToCacheDirectory:true,multiple:false});
+   if(picked.canceled||!picked.assets?.length)return;
+   const file=picked.assets[0];
+   if(!/\\.tar$/i.test(String(file.name||""))){
+    throw new Error("Choose a Valhalla tile-extract .tar file. The UK .pmtiles display map is not routing data.");
+   }
+   const target=FileSystem.documentDirectory+"valhalla-uk-tiles.tar";
+   await FileSystem.copyAsync({from:file.uri,to:target});
+   const info=await FileSystem.getInfoAsync(target);
+   if(!info.exists||Number(info.size||0)<1000000)throw new Error("The selected routing archive appears to be empty or incomplete.");
+   setValhallaTilesPath(target);
+   await AsyncStorage.setItem("@jett_valhalla_tiles_path",target);
+   Alert.alert("Routing data added","Valhalla tile archive saved. Jett can now use it for offline road routes.");
+  }catch(error){Alert.alert("Routing data not added",error.message||"Could not import the Valhalla tile archive.");}
+ }
+ async function calculateOfflineLeg(from,to){
+  if(!valhallaTilesPath)throw new Error("Import a Valhalla UK tile-extract .tar file first. The PMTiles map file is not road-routing data.");
+  if(!NativeModules.JettValhalla?.routeWithTileExtract)throw new Error("The installed app does not contain the Valhalla native bridge yet. Build and install the latest test APK.");
+  const request={locations:[{lat:Number(from.latitude??from.lat),lon:Number(from.longitude??from.lon),type:"break"},{lat:Number(to.lat),lon:Number(to.lon),type:"break"}],costing:"auto",directions_options:{units:"miles"}};
+  const raw=await NativeModules.JettValhalla.routeWithTileExtract(valhallaTilesPath,JSON.stringify(request));
+  const data=JSON.parse(raw);
+  const leg=data.trip?.legs?.[0];
+  const maneuvers=leg?.maneuvers||[];
+  if(!leg||!maneuvers.length)throw new Error("Valhalla returned no usable driving directions for this leg.");
+  return {miles:Number(data.trip.summary?.length||0),minutes:Math.round(Number(data.trip.summary?.time||0)/60),maneuvers:maneuvers.map((m,i)=>({id:i,instruction:m.instruction||m.verbal_pre_transition_instruction||"Continue",length:Number(m.length||0)}))};
+ }
  async function downloadOfflineUKMap(){
   if(!online)return Alert.alert("Internet needed","Connect to Wi-Fi or mobile data before downloading the UK map.");
   Alert.alert("Download whole UK map?","The UK street map is approximately 1.6 GB. Use Wi-Fi and make sure you have at least 3 GB of free storage.",[
@@ -1029,12 +1059,28 @@ async function locateRouteStops(){
  const mapZoom=mapBounds?Math.max(5,Math.min(14,Math.floor(Math.log2(360/mapSpan))-1)):11;
  const nextOfflineStop=stops.find(x=>!x.done);
  const distanceToNext=driverPosition&&nextOfflineStop&&nextOfflineStop.lat!=null&&nextOfflineStop.lon!=null?(()=>{const rad=v=>v*Math.PI/180;const dLat=rad(Number(nextOfflineStop.lat)-driverPosition.latitude),dLon=rad(Number(nextOfflineStop.lon)-driverPosition.longitude);const a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(Number(nextOfflineStop.lat)))*Math.sin(dLon/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));})():null;
- async function startOfflineRoute(){if(!offlineMapPath)return Alert.alert("Offline map required","Download or import the UK map first.");if(!stops.length)return Alert.alert("No stops","Import a delivery list first.");if(stops.some(x=>x.lat==null||x.lon==null))return Alert.alert("Locate stops first","Connect to the internet and find coordinates for every stop.");try{const p=await Location.requestForegroundPermissionsAsync();if(p.status!=="granted")return Alert.alert("Location permission needed","Allow location access while using Jett Pal.");const pos=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.Balanced});setDriverPosition(pos.coords);setOfflineNavActive(true);Alert.alert("Offline route started","Next stop: "+(nextOfflineStop?.name||nextOfflineStop?.address||"next delivery")+". This first stage shows straight-line distance, not road directions.");}catch(e){Alert.alert("Location unavailable",e.message||"Check that phone location is switched on.");}}
+ async function startOfflineRoute(){
+  if(!offlineMapPath)return Alert.alert("Offline map required","Download the UK map first.");
+  if(!valhallaTilesPath)return Alert.alert("Offline road data required","Import a Valhalla UK tile-extract .tar file. The 1.6 GB PMTiles file only draws the map; it cannot calculate road routes.");
+  if(!stops.length)return Alert.alert("No stops","Import a delivery list first.");
+  if(stops.some(x=>x.lat==null||x.lon==null))return Alert.alert("Locate stops first","Connect to the internet and find coordinates for every stop.");
+  if(!nextOfflineStop)return Alert.alert("No pending stops","All delivery stops are complete.");
+  setOfflineRouteBusy(true);
+  try{
+   const p=await Location.requestForegroundPermissionsAsync();
+   if(p.status!=="granted")return Alert.alert("Location permission needed","Allow location access while using Jett Pal.");
+   const pos=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.Balanced});
+   const leg=await calculateOfflineLeg(pos.coords,nextOfflineStop);
+   setDriverPosition(pos.coords);setOfflineDirections(leg.maneuvers);setOfflineNavActive(true);
+   Alert.alert("Offline directions ready","Route to "+(nextOfflineStop.name||nextOfflineStop.address)+": "+leg.miles.toFixed(1)+" miles, about "+fmt(leg.minutes)+".");
+  }catch(e){Alert.alert("Offline route failed",e.message||"Check the Valhalla routing archive and try again.");}
+  finally{setOfflineRouteBusy(false);}
+ }
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));}
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   <View style={s.card}>
    <Text style={s.cardTitle}>OFFLINE NAVIGATION — FIRST STAGE</Text>
-   {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>This is GPS progress only. Offline road routing and turn-by-turn instructions are still being developed.</Text><Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title="Start Offline Route" onPress={startOfflineRoute}/></>}
+   {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>Offline driving directions from the Valhalla road network:</Text>{offlineDirections.map(item=><Text key={item.id} style={s.resultTitle}>{item.id+1}. {item.instruction}</Text>)}<Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title={offlineRouteBusy?"Calculating offline directions…":"Start Offline Route"} disabled={offlineRouteBusy} onPress={startOfflineRoute}/></>}
   </View>
   <View style={s.card}>
    <Text style={s.cardTitle}>CURRENT DELIVERY ROUTE</Text>
@@ -1047,6 +1093,11 @@ async function locateRouteStops(){
    <Text style={[s.small,{marginTop:10}]}>Located stops: {stops.filter(x=>x.lat!=null&&x.lon!=null).length} of {stops.length}</Text><Button title={busy?"Locating addresses…":"Find coordinates for delivery stops"} disabled={busy||!stops.length} onPress={locateRouteStops} outline/>
   </View>
   <View style={s.card}>
+   <View style={s.card}>
+    <Text style={s.cardTitle}>OFFLINE ROAD ROUTING DATA</Text>
+    <Text style={s.small}>{valhallaTilesPath?"Valhalla routing archive saved on this phone.":"A separate Valhalla .tar road-network archive is required. The UK PMTiles file is only for map display."}</Text>
+    <Button title={valhallaTilesPath?"Replace Valhalla routing archive":"Import Valhalla routing .tar file"} onPress={importValhallaTiles} outline/>
+   </View>
    <Text style={s.cardTitle}>WHOLE UK STREET MAP</Text>
    <Text style={s.small}>{offlineMapPath?"Your UK map is saved on this phone and available offline.":"Download the whole UK street map inside Jett Pal, or import a file you already have."}</Text>
    <Button title={mapDownloadBusy?"Downloading UK map…":offlineMapPath?"Download map update":"Download UK map (about 1.6 GB)"} disabled={mapDownloadBusy||mapImportBusy} onPress={downloadOfflineUKMap}/>
