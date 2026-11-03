@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - feature/offline-valhalla-native
+      - feature/navigation-upgrades
 
 jobs:
   build:
