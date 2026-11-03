@@ -19,6 +19,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.valhalla.valhalla.Valhalla;
+import com.valhalla.valhalla.config.ValhallaConfigFactory;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -51,6 +52,34 @@ public final class JettValhallaModule extends ReactContextBaseJavaModule {
           closeEngineInternal();
           engine = new Valhalla(configPath);
           activeConfigPath = configPath;
+        }
+        promise.resolve(engine.routeRaw(requestJson));
+      } catch (Throwable error) {
+        closeEngineInternal();
+        promise.reject("E_VALHALLA_ROUTE", error.getMessage(), error);
+      }
+    });
+  }
+
+  @ReactMethod
+  public void routeWithTileExtract(String tileExtractPath, String requestJson, Promise promise) {
+    if (tileExtractPath == null || tileExtractPath.trim().isEmpty()) {
+      promise.reject("E_VALHALLA_TILES", "A Valhalla tile-extract TAR path is required.");
+      return;
+    }
+    if (requestJson == null || requestJson.trim().isEmpty()) {
+      promise.reject("E_VALHALLA_REQUEST", "A Valhalla route request is required.");
+      return;
+    }
+    executor.execute(() -> {
+      try {
+        if (engine == null || !tileExtractPath.equals(activeConfigPath)) {
+          closeEngineInternal();
+          engine = new Valhalla(
+            getReactApplicationContext(),
+            ValhallaConfigFactory.usingTileExtract(tileExtractPath)
+          );
+          activeConfigPath = tileExtractPath;
         }
         promise.resolve(engine.routeRaw(requestJson));
       } catch (Throwable error) {
