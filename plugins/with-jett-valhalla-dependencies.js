@@ -169,8 +169,14 @@ module.exports = function withJettValhallaDependencies(config) {
       }
     }
 
-    // Use JDK 21 for the build, with matching Android-compatible Java 17
-    // bytecode targets for javac and Kotlin.
+    // Compile Java sources with JDK 21 so javac can read Valhalla's Java 21
+    // dependency classes, while retaining Android-compatible Java 17 bytecode.
+    if (!/java\\s*\\{\\s*toolchain\\s*\\{/.test(contents)) {
+      contents = contents.replace(/^(plugins\\s*\\{[\\s\\S]*?\\})/m, (match) =>
+        match + "\\n\\njava {\\n    toolchain {\\n        languageVersion = JavaLanguageVersion.of(21)\\n    }\\n}"
+      );
+    }
+
     if (/compileOptions\s*\{/.test(contents)) {
       contents = contents.replace(/compileOptions\s*\{/, (match) =>
         match + "\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17"
