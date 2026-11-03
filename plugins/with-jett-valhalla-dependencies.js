@@ -33,9 +33,7 @@ public final class JettValhallaModule extends ReactContextBaseJavaModule {
   }
 
   @Override
-  public String getName() {
-    return "JettValhalla";
-  }
+  public String getName() { return "JettValhalla"; }
 
   @ReactMethod
   public void route(String configPath, String requestJson, Promise promise) {
@@ -47,7 +45,6 @@ public final class JettValhallaModule extends ReactContextBaseJavaModule {
       promise.reject("E_VALHALLA_REQUEST", "A Valhalla route request is required.");
       return;
     }
-
     executor.execute(() -> {
       try {
         if (engine == null || !configPath.equals(activeConfigPath)) {
@@ -55,8 +52,7 @@ public final class JettValhallaModule extends ReactContextBaseJavaModule {
           engine = new Valhalla(configPath);
           activeConfigPath = configPath;
         }
-        String response = engine.routeRaw(requestJson);
-        promise.resolve(response);
+        promise.resolve(engine.routeRaw(requestJson));
       } catch (Throwable error) {
         closeEngineInternal();
         promise.reject("E_VALHALLA_ROUTE", error.getMessage(), error);
@@ -74,11 +70,7 @@ public final class JettValhallaModule extends ReactContextBaseJavaModule {
 
   private void closeEngineInternal() {
     if (engine != null) {
-      try {
-        engine.close();
-      } catch (Exception ignored) {
-        // Closing is best-effort during replacement or module shutdown.
-      }
+      try { engine.close(); } catch (Exception ignored) { }
       engine = null;
       activeConfigPath = null;
     }
@@ -99,7 +91,6 @@ import com.facebook.react.ReactPackage;
 import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.uimanager.ViewManager;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -111,7 +102,6 @@ public final class JettValhallaPackage implements ReactPackage {
     modules.add(new JettValhallaModule(context));
     return modules;
   }
-
   @Override
   public List<ViewManager> createViewManagers(ReactApplicationContext context) {
     return Collections.emptyList();
@@ -122,21 +112,17 @@ public final class JettValhallaPackage implements ReactPackage {
 module.exports = function withJettValhallaDependencies(config) {
   config = withGradleProperties(config, (mod) => {
     const props = mod.modResults;
-    const existing = props.find(
-      (item) => item.type === "property" && item.key === "android.kotlinVersion"
-    );
+    const existing = props.find((item) => item.type === "property" && item.key === "android.kotlinVersion");
     if (existing) existing.value = EXPO_KOTLIN_VERSION;
     else props.push({ type: "property", key: "android.kotlinVersion", value: EXPO_KOTLIN_VERSION });
     return mod;
   });
 
   config = withProjectBuildGradle(config, (mod) => {
-    let contents = mod.modResults.contents;
-    contents = contents.replace(
+    mod.modResults.contents = mod.modResults.contents.replace(
       /org\.jetbrains\.kotlin:kotlin-gradle-plugin(?::[0-9.]+)?/g,
       "org.jetbrains.kotlin:kotlin-gradle-plugin:" + COMPILER_KOTLIN_VERSION
     );
-    mod.modResults.contents = contents;
     return mod;
   });
 
@@ -144,54 +130,27 @@ module.exports = function withJettValhallaDependencies(config) {
     let contents = mod.modResults.contents;
     const dependency = "implementation 'io.github.rallista:valhalla-mobile:0.6.4'";
     if (!contents.includes(dependency)) {
-      const block = /dependencies\s*\{/;
-      if (!block.test(contents)) throw new Error("Jett Valhalla: could not find Android dependencies block");
-      contents = contents.replace(block, (match) => match + "\n    " + dependency);
+      contents = contents.replace(/dependencies\s*\{/, (match) => match + "\n    " + dependency);
     }
 
-    // The published wrapper AAR contains Java 21 bytecode (class version 65).
-    // Compile the app sources with Java 21 so javac can read the wrapper API.
-    const compileOptions = /compileOptions\s*\{/;
-    if (compileOptions.test(contents)) {
-      contents = contents.replace(compileOptions, (match) =>
-        match + "\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17"
+    // The Valhalla wrapper contains Java 21 bytecode. Use JDK 21 and align
+    // Java and Kotlin bytecode targets at 21 so javac can read the API.
+    if (/compileOptions\s*\{/.test(contents)) {
+      contents = contents.replace(/compileOptions\s*\{/, (match) =>
+        match + "\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21"
       );
     } else {
-      const androidBlock = /android\s*\{/;
-      if (!androidBlock.test(contents)) {
-        throw new Error("Jett Valhalla: could not find Android block for Java 21 settings");
-      }
-      contents = contents.replace(
-        androidBlock,
-        (match) => match + "\n    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }"
+      contents = contents.replace(/android\s*\{/, (match) =>
+        match + "\n    compileOptions { sourceCompatibility JavaVersion.VERSION_21; targetCompatibility JavaVersion.VERSION_21 }"
       );
     }
 
-    const kotlinOptions = /kotlinOptions\s*\{/;
-    if (kotlinOptions.test(contents)) {
-      contents = contents.replace(kotlinOptions, (match) => match + '\n        jvmTarget = "17"');
+    if (/kotlinOptions\s*\{/.test(contents)) {
+      contents = contents.replace(/kotlinOptions\s*\{/, (match) => match + '\n        jvmTarget = "21"');
     } else {
-      contents = contents.replace(
-        /android\s*\{/,
-        (match) => match + '\n    kotlinOptions { jvmTarget = "17" }'
+      contents = contents.replace(/android\s*\{/, (match) =>
+        match + '\n    kotlinOptions { jvmTarget = "21" }'
       );
-    }
-
-    // Select the JDK 21 compiler during task configuration. Register this
-    // before Gradle realises/finalises JavaCompile tasks; projectsEvaluated is
-    // too late because AGP may already have locked javaCompiler by then.
-    if (!contents.includes("javaToolchains.compilerFor")) {
-      contents += `
-
-// The Valhalla wrapper AAR is built with Java 21 bytecode.
-tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
-    javaCompiler = javaToolchains.compilerFor {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-    sourceCompatibility = JavaVersion.VERSION_17.toString()
-    targetCompatibility = JavaVersion.VERSION_17.toString()
-}
-`;
     }
 
     mod.modResults.contents = contents;
@@ -203,9 +162,7 @@ tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
     const registration = "add(com.jett.distribution.routeplanner.valhalla.JettValhallaPackage())";
     let contents = mod.modResults.contents;
     if (!contents.includes(registration)) {
-      if (!contents.includes(marker)) {
-        throw new Error("Jett Valhalla: could not find MainApplication package registration block");
-      }
+      if (!contents.includes(marker)) throw new Error("Jett Valhalla: could not find MainApplication package registration block");
       contents = contents.replace(marker, marker + "\n          " + registration);
     }
     mod.modResults.contents = contents;
