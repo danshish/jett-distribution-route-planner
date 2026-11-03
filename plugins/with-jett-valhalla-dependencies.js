@@ -154,7 +154,7 @@ module.exports = function withJettValhallaDependencies(config) {
     const compileOptions = /compileOptions\s*\{/;
     if (compileOptions.test(contents)) {
       contents = contents.replace(compileOptions, (match) =>
-        match + "\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21"
+        match + "\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17"
       );
     } else {
       const androidBlock = /android\s*\{/;
@@ -163,17 +163,17 @@ module.exports = function withJettValhallaDependencies(config) {
       }
       contents = contents.replace(
         androidBlock,
-        (match) => match + "\n    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21\n    }"
+        (match) => match + "\n    compileOptions {\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17\n    }"
       );
     }
 
     const kotlinOptions = /kotlinOptions\s*\{/;
     if (kotlinOptions.test(contents)) {
-      contents = contents.replace(kotlinOptions, (match) => match + '\n        jvmTarget = "21"');
+      contents = contents.replace(kotlinOptions, (match) => match + '\n        jvmTarget = "17"');
     } else {
       contents = contents.replace(
         /android\s*\{/,
-        (match) => match + '\n    kotlinOptions { jvmTarget = "21" }'
+        (match) => match + '\n    kotlinOptions { jvmTarget = "17" }'
       );
     }
 
@@ -188,8 +188,8 @@ tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
     javaCompiler = javaToolchains.compilerFor {
         languageVersion = JavaLanguageVersion.of(21)
     }
-    sourceCompatibility = JavaVersion.VERSION_21.toString()
-    targetCompatibility = JavaVersion.VERSION_21.toString()
+    sourceCompatibility = JavaVersion.VERSION_17.toString()
+    targetCompatibility = JavaVersion.VERSION_17.toString()
 }
 `;
     }
