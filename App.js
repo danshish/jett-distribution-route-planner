@@ -1007,7 +1007,7 @@ async function locateRouteStops(){
   const point=(lat,lon)=>Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
   if(!point(startLat,startLon))throw new Error("GPS diagnostic: the phone returned invalid coordinates ("+startLat+", "+startLon+"). Check Android location permission and GPS.");
   if(!point(endLat,endLon))throw new Error("Stop diagnostic: "+(to.name||to.address||"Next delivery stop")+" has invalid saved coordinates ("+endLat+", "+endLon+"). Re-find this stop while online.");
-  const request={locations:[{lat:startLat,lon:startLon,type:"break",radius:5000},{lat:endLat,lon:endLon,type:"break",radius:1500}],costing:"auto",directions_options:{units:"miles"}};
+  const request={locations:[{lat:startLat,lon:startLon,type:"break",radius:5000},{lat:endLat,lon:endLon,type:"break",radius:5000}],costing:"auto",directions_options:{units:"miles"}};
   let raw;
   try{raw=await NativeModules.JettValhalla.routeWithTileExtract(valhallaTilesPath,JSON.stringify(request));}
   catch(error){
