@@ -181,7 +181,7 @@ module.exports = function withJettValhallaDependencies(config) {
     // this Expo-generated project. Re-apply the target after every project has
     // finished evaluation so the actual JavaCompile tasks use Java 21.
     if (!contents.includes("gradle.projectsEvaluated")) {
-      contents += `\n\ngradle.projectsEvaluated {\n    tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {\n        sourceCompatibility = JavaVersion.VERSION_21.toString()\n        targetCompatibility = JavaVersion.VERSION_21.toString()\n    }\n}\n`;
+      contents += `\n\ngradle.projectsEvaluated {\n    def jdk21 = javaToolchains.compilerFor {\n        languageVersion = JavaLanguageVersion.of(21)\n    }\n    tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {\n        javaCompiler = jdk21.get()\n        sourceCompatibility = JavaVersion.VERSION_21.toString()\n        targetCompatibility = JavaVersion.VERSION_21.toString()\n    }\n}\n`;
     }
 
     mod.modResults.contents = contents;
