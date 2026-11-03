@@ -512,7 +512,7 @@ async function locateRouteStops(){
     [
       {text:"Google Maps",onPress:()=>{setMapPreference("google");if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");Linking.openURL(googleUrl).catch(()=>Alert.alert("Unable to open","Google Maps could not be opened."));}},
       {text:"Multi Stop Maps",onPress:()=>{setMapPreference("google");if(routeStops.length>4)return Alert.alert("Split this route","Google Maps on phones supports up to 3 intermediate stops in one directions link. Please navigate in groups of 4 stops or fewer.");Linking.openURL(googleUrl).catch(()=>Alert.alert("Unable to open maps","Android could not open the multi-stop directions link. Please check that a browser or Google Maps is installed."));}},
-      ...(offlineMapPath?[{text:"Jett Offline Map",onPress:()=>{setMapPreference("offline");setScreen("map");setTab("Map");}}]:[]),
+      ...(offlineMapPath?[{text:"Jett Offline Map",onPress:()=>{setMapPreference("offline");setScreen("map");setTab("Map");startOfflineRoute();}}]:[]),
       {text:"Apple Maps",onPress:()=>{setMapPreference("apple");const appleUrl="https://maps.apple.com/?saddr="+origin+"&daddr="+destination+(intermediate.length?"&waypoints="+encodeURIComponent(intermediate.join("|")):"")+"&dirflg=d";Linking.openURL(appleUrl).catch(()=>Alert.alert("Unable to open","Apple Maps could not be opened on this device."));}},
       {text:"Cancel",style:"cancel"}
     ]
