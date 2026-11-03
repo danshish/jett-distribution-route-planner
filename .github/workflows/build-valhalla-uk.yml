@@ -34,6 +34,7 @@ jobs:
         run: |
           docker pull ghcr.io/valhalla/valhalla-scripted:latest
           docker run -d --name valhalla-uk-build \
+            -p 8002:8002 \
             -v "$PWD/custom_files:/custom_files" \
             -e server_threads=2 \
             -e build_elevation=False \
