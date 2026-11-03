@@ -1,0 +1,79 @@
+name: Build UK offline Valhalla routing archive
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-valhalla-uk.yml"
+    branches:
+      - feature/offline-valhalla-native
+
+permissions:
+  contents: read
+
+jobs:
+  build-uk-routing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Show available disk and memory
+        run: |
+          df -h /
+          free -h
+
+      - name: Download current UK OpenStreetMap extract
+        run: |
+          mkdir -p custom_files
+          curl -fL --retry 5 --retry-all-errors --connect-timeout 30 \
+            https://download.geofabrik.de/europe/united-kingdom-latest.osm.pbf \
+            -o custom_files/united-kingdom-latest.osm.pbf
+          test "$(stat -c%s custom_files/united-kingdom-latest.osm.pbf)" -gt 1000000000
+          ls -lh custom_files/united-kingdom-latest.osm.pbf
+
+      - name: Build UK Valhalla graph and tile-extract archive
+        run: |
+          docker pull ghcr.io/valhalla/valhalla-scripted:latest
+          docker run -d --name valhalla-uk-build \
+            -v "$PWD/custom_files:/custom_files" \
+            -e server_threads=2 \
+            -e build_elevation=False \
+            -e build_transit=False \
+            -e build_tar=True \
+            -e serve_tiles=True \
+            ghcr.io/valhalla/valhalla-scripted:latest
+          # Wait for Valhalla to finish graph generation and answer a real route.
+          for i in $(seq 1 210); do
+            if docker exec valhalla-uk-build sh -lc 'test -s /custom_files/valhalla_tiles.tar'; then
+              if curl -fsS http://127.0.0.1:8002/status >/dev/null; then
+                break
+              fi
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' valhalla-uk-build)" != "true" ]; then
+              docker logs valhalla-uk-build
+              exit 1
+            fi
+            sleep 60
+          done
+          docker logs --tail 100 valhalla-uk-build
+          test -s custom_files/valhalla_tiles.tar
+          curl -fsS http://127.0.0.1:8002/route \
+            -H 'Content-Type: application/json' \
+            --data '{"locations":[{"lat":52.612,"lon":1.728,"type":"break"},{"lat":51.5072,"lon":-0.1276,"type":"break"}],"costing":"auto","directions_options":{"units":"miles"}}' \
+            -o custom_files/route-test.json
+          grep -q '"trip"' custom_files/route-test.json
+          echo "UK offline route test passed."
+          ls -lh custom_files/valhalla_tiles.tar
+          sha256sum custom_files/valhalla_tiles.tar
+
+      - name: Upload verified UK routing archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jett-Pal-UK-Valhalla-Routing
+          path: custom_files/valhalla_tiles.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
+
+      - name: Stop Valhalla container
+        if: always()
+        run: docker rm -f valhalla-uk-build || true
