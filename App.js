@@ -52,7 +52,7 @@ export default function App(){
  const [label,setLabel]=useState(""),[town,setTown]=useState(""),[pc,setPc]=useState(""),[routeName,setRouteName]=useState("Jett Pal Delivery Route");
  const [mapChoice,setMapChoice]=useState("google");
  const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
- const [valhallaTilesPath,setValhallaTilesPath]=useState(null),[offlineDirections,setOfflineDirections]=useState([]),[offlineRouteBusy,setOfflineRouteBusy]=useState(false);
+ const [valhallaTilesPath,setValhallaTilesPath]=useState(null),[offlineDirections,setOfflineDirections]=useState([]),[offlineRouteBusy,setOfflineRouteBusy]=useState(false),[offlineRouteCoordinates,setOfflineRouteCoordinates]=useState([]);
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
@@ -77,6 +77,12 @@ useEffect(() => {
   return () => clearTimeout(timer);
 }, [splashOpacity]);
  useEffect(()=>{(async()=>{try{const [c,r,s,m,l,vt,mp]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded"),AsyncStorage.getItem("@jett_valhalla_tiles_path"),AsyncStorage.getItem("@jett_uk_pmtiles_path")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));if(vt)setValhallaTilesPath(vt);if(mp)setOfflineMapPath(mp);}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
+ useEffect(()=>{
+  if(!offlineNavActive)return;
+  let subscription=null;
+  Location.watchPositionAsync({accuracy:Location.Accuracy.High,timeInterval:2000,distanceInterval:5},position=>setDriverPosition(position.coords)).then(value=>{subscription=value;}).catch(()=>{});
+  return ()=>{if(subscription)subscription.remove();};
+ },[offlineNavActive]);
  useEffect(()=>{
   const handleAuthUrl=async({url})=>{
    if(!url||!supabase)return;
@@ -1035,7 +1041,9 @@ async function locateRouteStops(){
   if(data.error)throw new Error("Valhalla route diagnostic: "+(data.error.message||JSON.stringify(data.error))+" (GPS "+startLat.toFixed(6)+", "+startLon.toFixed(6)+"; stop "+endLat.toFixed(6)+", "+endLon.toFixed(6)+").");
   const leg=data.trip?.legs?.[0];const maneuvers=leg?.maneuvers||[];
   if(!leg||!maneuvers.length)throw new Error("Valhalla returned no usable directions. GPS "+startLat.toFixed(6)+", "+startLon.toFixed(6)+"; stop "+endLat.toFixed(6)+", "+endLon.toFixed(6)+".");
-  return {miles:Number(data.trip.summary?.length||0),minutes:Math.round(Number(data.trip.summary?.time||0)/60),maneuvers:maneuvers.map((m,i)=>({id:i,instruction:m.instruction||m.verbal_pre_transition_instruction||"Continue",length:Number(m.length||0)}))};
+  const decodePolyline6=encoded=>{let index=0,lat=0,lon=0,points=[];while(index<encoded.length){let result=0,shift=0,b;do{b=encoded.charCodeAt(index++)-63;result|=(b&0x1f)<<shift;shift+=5;}while(b>=0x20&&index<encoded.length);lat+=(result&1)?~(result>>1):(result>>1);result=0;shift=0;do{b=encoded.charCodeAt(index++)-63;result|=(b&0x1f)<<shift;shift+=5;}while(b>=0x20&&index<encoded.length);lon+=(result&1)?~(result>>1):(result>>1);points.push([lon/1e6,lat/1e6]);}return points;};
+  const coordinates=leg.shape?decodePolyline6(leg.shape):[];
+  return {miles:Number(data.trip.summary?.length||0),minutes:Math.round(Number(data.trip.summary?.time||0)/60),coordinates,maneuvers:maneuvers.map((m,i)=>({id:i,instruction:m.instruction||m.verbal_pre_transition_instruction||"Continue",length:Number(m.length||0)}))};
  }
  async function downloadOfflineUKMap(){
   if(!online)return Alert.alert("Internet needed","Connect to Wi-Fi or mobile data before downloading the UK map.");
@@ -1097,13 +1105,23 @@ async function locateRouteStops(){
    if(p.status!=="granted")return Alert.alert("Location permission needed","Allow location access while using Jett Pal.");
    const pos=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.Balanced});
    const leg=await calculateOfflineLeg(pos.coords,nextOfflineStop);
-   setDriverPosition(pos.coords);setOfflineDirections(leg.maneuvers);setOfflineNavActive(true);
+   setDriverPosition(pos.coords);setOfflineDirections(leg.maneuvers);setOfflineRouteCoordinates(leg.coordinates||[]);setOfflineNavActive(true);
    Alert.alert("Offline directions ready","Route to "+(nextOfflineStop.name||nextOfflineStop.address)+": "+leg.miles.toFixed(1)+" miles, about "+fmt(leg.minutes)+".");
   }catch(e){Alert.alert("Offline route failed",e.message||"Check the Valhalla routing archive and try again.");}
   finally{setOfflineRouteBusy(false);}
  }
- async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));}
+ async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));setOfflineNavActive(false);setOfflineRouteCoordinates([]);setOfflineDirections([]);}
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
+  {offlineNavActive&&offlineMapPath?<View style={{height:390,borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:C.green,marginBottom:12}}>
+   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
+    <MapCamera centerCoordinate={driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter} zoomLevel={16} animationMode="easeTo" animationDuration={700}/>
+    {offlineRouteCoordinates.length>1?<GeoJSONSource id="active-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="active-offline-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":9,"line-opacity":0.95}}/><Layer id="active-offline-route-line" type="line" paint={{"line-color":"#087cf0","line-width":6,"line-opacity":1}}/></GeoJSONSource>:null}
+    {driverPosition?<GeoJSONSource id="live-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]}}}><Layer id="driver-position-halo" type="circle" paint={{"circle-radius":17,"circle-color":"#1687ff","circle-opacity":0.2}}/><Layer id="driver-position-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
+    {nextOfflineStop?<GeoJSONSource id="active-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="active-destination-pin" type="circle" paint={{"circle-radius":11,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
+   </MapLibreMap>
+   <View style={{position:"absolute",left:10,right:10,top:10,backgroundColor:"rgba(6,21,29,0.94)",padding:12,borderRadius:10}}><Text style={{color:"#ffffff",fontWeight:"900",fontSize:16}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text><Text style={{color:"#ffffff",marginTop:4}}>{offlineDirections[0]?.instruction||"Follow the blue route"}</Text></View>
+   <View style={{position:"absolute",bottom:10,left:10,backgroundColor:"rgba(6,21,29,0.9)",padding:8,borderRadius:8}}><Text style={{color:"#ffffff",fontSize:12}}>Blue dot: your GPS · Blue line: offline route</Text></View>
+  </View>:null}
   <View style={s.card}>
    <Text style={s.cardTitle}>OFFLINE NAVIGATION — FIRST STAGE</Text>
    {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>Offline driving directions from the Valhalla road network:</Text>{offlineDirections.map(item=><Text key={item.id} style={s.resultTitle}>{item.id+1}. {item.instruction}</Text>)}<Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title={offlineRouteBusy?"Calculating offline directions…":"Start Offline Route"} disabled={offlineRouteBusy} onPress={startOfflineRoute}/></>}
