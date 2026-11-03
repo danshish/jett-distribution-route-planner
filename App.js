@@ -1005,14 +1005,14 @@ async function locateRouteStops(){
   if(!NativeModules.JettValhalla?.routeWithTileExtract)return Alert.alert("Native engine missing","This APK does not contain the Valhalla Android bridge.");
   setOfflineRouteBusy(true);
   try{
-   const request={locations:[{lat:52.612,lon:1.728,type:"break",radius:5000},{lat:51.5072,lon:-0.1276,type:"break",radius:5000}],costing:"auto",directions_options:{units:"miles"}};
+   const request={locations:[{lat:53.794210,lon:-3.042881,type:"break",radius:5000},{lat:53.819915,lon:-3.037163,type:"break",radius:5000}],costing:"auto",directions_options:{units:"miles"}};
    const raw=await NativeModules.JettValhalla.routeWithTileExtract(valhallaTilesPath,JSON.stringify(request));
    const data=JSON.parse(raw);
    if(data.error)throw new Error(data.error.message||JSON.stringify(data.error));
    if(!data.trip?.legs?.length)throw new Error("Valhalla returned no trip object.");
-   Alert.alert("Routing archive test passed","The Android engine successfully routed from Great Yarmouth to London using the saved archive. This confirms the archive loads; the remaining issue is specific to the Blackpool GPS/stop road matching.");
+   Alert.alert("Routing archive test passed","The Android engine successfully routed between two known Blackpool points using the saved archive. This confirms the archive loads and contains routable Blackpool road data.");
   }catch(error){
-   Alert.alert("Routing archive test failed","The Android engine could not complete the known UK test route. "+String(error?.message||error));
+   Alert.alert("Routing archive test failed","The Android engine could not complete the known Blackpool test route. "+String(error?.message||error));
   }finally{setOfflineRouteBusy(false);}
  }
  async function calculateOfflineLeg(from,to){
