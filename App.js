@@ -1000,6 +1000,21 @@ async function locateRouteStops(){
    Alert.alert("Routing data added","Valhalla tile archive saved. Jett can now use it for offline road routes.");
   }catch(error){Alert.alert("Routing data not added",error.message||"Could not import the Valhalla tile archive.");}
  }
+ async function testValhallaArchive(){
+  if(!valhallaTilesPath)return Alert.alert("Routing archive missing","Import the Valhalla UK .tar archive first.");
+  if(!NativeModules.JettValhalla?.routeWithTileExtract)return Alert.alert("Native engine missing","This APK does not contain the Valhalla Android bridge.");
+  setOfflineRouteBusy(true);
+  try{
+   const request={locations:[{lat:52.612,lon:1.728,type:"break",radius:5000},{lat:51.5072,lon:-0.1276,type:"break",radius:5000}],costing:"auto",directions_options:{units:"miles"}};
+   const raw=await NativeModules.JettValhalla.routeWithTileExtract(valhallaTilesPath,JSON.stringify(request));
+   const data=JSON.parse(raw);
+   if(data.error)throw new Error(data.error.message||JSON.stringify(data.error));
+   if(!data.trip?.legs?.length)throw new Error("Valhalla returned no trip object.");
+   Alert.alert("Routing archive test passed","The Android engine successfully routed from Great Yarmouth to London using the saved archive. This confirms the archive loads; the remaining issue is specific to the Blackpool GPS/stop road matching.");
+  }catch(error){
+   Alert.alert("Routing archive test failed","The Android engine could not complete the known UK test route. "+String(error?.message||error));
+  }finally{setOfflineRouteBusy(false);}
+ }
  async function calculateOfflineLeg(from,to){
   if(!valhallaTilesPath)throw new Error("Import a Valhalla UK tile-extract .tar file first. The PMTiles map is not routing data.");
   if(!NativeModules.JettValhalla?.routeWithTileExtract)throw new Error("The installed app does not contain the Valhalla native bridge yet. Build and install the latest test APK.");
@@ -1108,6 +1123,7 @@ async function locateRouteStops(){
     <Text style={s.cardTitle}>OFFLINE ROAD ROUTING DATA</Text>
     <Text style={s.small}>{valhallaTilesPath?"Valhalla routing archive saved on this phone.":"A separate Valhalla .tar road-network archive is required. The UK PMTiles file is only for map display."}</Text>
     <Button title={valhallaTilesPath?"Replace Valhalla routing archive":"Import Valhalla routing .tar file"} onPress={importValhallaTiles} outline/>
+    <Button title={offlineRouteBusy?"Testing routing archive…":"Test routing archive"} disabled={offlineRouteBusy||!valhallaTilesPath} onPress={testValhallaArchive} outline/>
    </View>
    <Text style={s.cardTitle}>WHOLE UK STREET MAP</Text>
    <Text style={s.small}>{offlineMapPath?"Your UK map is saved on this phone and available offline.":"Download the whole UK street map inside Jett Pal, or import a file you already have."}</Text>
