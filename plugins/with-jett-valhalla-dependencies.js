@@ -77,7 +77,7 @@ public final class JettValhallaModule extends ReactContextBaseJavaModule {
           closeEngineInternal();
           engine = new Valhalla(
             getReactApplicationContext(),
-            ValhallaConfigFactory.usingTileExtract(tileExtractPath)
+            ValhallaConfigFactory.usingTileExtract(tileExtractPath, null)
           );
           activeConfigPath = tileExtractPath;
         }
