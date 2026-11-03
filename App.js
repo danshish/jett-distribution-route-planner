@@ -56,6 +56,8 @@ export default function App(){
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const navigationCameraRef=useRef(null);
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0);
+ const [rerouting,setRerouting]=useState(false),[distanceToManeuver,setDistanceToManeuver]=useState(null);
+ const lastRerouteAt=useRef(0);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
@@ -86,7 +88,7 @@ useEffect(() => {
  },[offlineNavActive]);
  useEffect(()=>{
   if(offlineNavActive&&driverPosition&&navigationCameraRef.current){
-   navigationCameraRef.current.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:20,duration:700});
+   navigationCameraRef.current.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:20.5,duration:700});
   }
   if(offlineNavActive&&driverPosition&&offlineRouteCoordinates.length>1&&offlineDirections.length){
    const rad=v=>v*Math.PI/180;
@@ -97,6 +99,25 @@ useEffect(() => {
    setCurrentManeuverIndex(activeIndex);
   }
  },[offlineNavActive,driverPosition,offlineRouteCoordinates,offlineDirections]);
+ useEffect(()=>{
+  if(!offlineNavActive||!driverPosition||offlineRouteCoordinates.length<2||!offlineDirections.length)return;
+  const rad=v=>v*Math.PI/180;
+  let nearestIndex=0,nearestDistance=Infinity;
+  offlineRouteCoordinates.forEach((point,index)=>{const dLat=rad(point[1]-driverPosition.latitude),dLon=rad(point[0]-driverPosition.longitude),a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(point[1]))*Math.sin(dLon/2)**2,d=6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));if(d<nearestDistance){nearestDistance=d;nearestIndex=index;}});
+  const nextManeuver=offlineDirections[Math.min(currentManeuverIndex+1,offlineDirections.length-1)];
+  if(nextManeuver&&offlineRouteCoordinates[nextManeuver.beginShapeIndex]){
+   const point=offlineRouteCoordinates[nextManeuver.beginShapeIndex],dLat=rad(point[1]-driverPosition.latitude),dLon=rad(point[0]-driverPosition.longitude),a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(point[1]))*Math.sin(dLon/2)**2;
+   setDistanceToManeuver(6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+  }else setDistanceToManeuver(null);
+  if(nearestDistance>50&&Number(driverPosition.accuracy||0)<30&&Date.now()-lastRerouteAt.current>30000&&!rerouting){
+   lastRerouteAt.current=Date.now();setRerouting(true);
+   const destination=stops.find(x=>!x.done);
+   if(destination)calculateOfflineLeg(driverPosition,destination).then(leg=>{
+    if(leg.coordinates?.length>1){setOfflineDirections(leg.maneuvers);setOfflineRouteCoordinates(leg.coordinates);setCurrentManeuverIndex(0);}
+   }).catch(error=>console.warn("Offline reroute:",error?.message||error)).finally(()=>setRerouting(false));
+   else setRerouting(false);
+  }
+ },[offlineNavActive,driverPosition,offlineRouteCoordinates,offlineDirections,currentManeuverIndex,rerouting,stops]);
  useEffect(()=>{
   const handleAuthUrl=async({url})=>{
    if(!url||!supabase)return;
@@ -1128,12 +1149,12 @@ async function locateRouteStops(){
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   {offlineNavActive&&offlineMapPath?<View style={{height:390,borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:C.green,marginBottom:12}}>
    <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
-    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20}}/>
+    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20.5}}/>
     {offlineRouteCoordinates.length>1?<GeoJSONSource id="active-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="active-offline-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":9,"line-opacity":0.95}}/><Layer id="active-offline-route-line" type="line" paint={{"line-color":"#087cf0","line-width":6,"line-opacity":1}}/></GeoJSONSource>:null}
     {driverPosition?<GeoJSONSource id="live-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]}}}><Layer id="driver-position-halo" type="circle" paint={{"circle-radius":17,"circle-color":"#1687ff","circle-opacity":0.2}}/><Layer id="driver-position-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
     {nextOfflineStop?<GeoJSONSource id="active-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="active-destination-pin" type="circle" paint={{"circle-radius":11,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
    </MapLibreMap>
-   <View style={{position:"absolute",left:10,right:10,top:10,backgroundColor:"rgba(6,21,29,0.94)",padding:12,borderRadius:10}}><Text style={{color:"#ffffff",fontWeight:"900",fontSize:16}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text><Text style={{color:"#ffffff",marginTop:4}}>{offlineDirections[currentManeuverIndex]?.instruction||"Follow the blue route"}</Text></View>
+   <View style={{position:"absolute",left:10,right:10,top:10,backgroundColor:"rgba(6,21,29,0.94)",padding:12,borderRadius:10}}><Text style={{color:"#ffffff",fontWeight:"900",fontSize:16}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text><Text style={{color:"#ffffff",marginTop:4}}>{rerouting?"Recalculating offline route…":offlineDirections[currentManeuverIndex]?.instruction||"Follow the blue route"}</Text>{distanceToManeuver!=null?<Text style={{color:"#7ad64f",fontWeight:"900",marginTop:4}}>{distanceToManeuver>1000?(distanceToManeuver/1000).toFixed(1)+" km":Math.round(distanceToManeuver)+" m"} to next turn</Text>:null}</View>
    <View style={{position:"absolute",bottom:10,left:10,backgroundColor:"rgba(6,21,29,0.9)",padding:8,borderRadius:8}}><Text style={{color:"#ffffff",fontSize:12}}>Blue dot: your GPS · Blue line: offline route</Text></View>
   </View>:null}
   <View style={s.card}>
