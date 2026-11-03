@@ -23,6 +23,8 @@ import com.valhalla.valhalla.config.ValhallaConfigFactory;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.io.File;
+import android.net.Uri;
 
 public final class JettValhallaModule extends ReactContextBaseJavaModule {
   private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -73,13 +75,28 @@ public final class JettValhallaModule extends ReactContextBaseJavaModule {
     }
     executor.execute(() -> {
       try {
-        if (engine == null || !tileExtractPath.equals(activeConfigPath)) {
+        // Expo FileSystem returns file:// URIs, but Valhalla expects a plain
+        // absolute filesystem path. Passing the URI verbatim can leave the
+        // engine unable to read the TAR and produces misleading error 171s.
+        String resolvedPath = tileExtractPath;
+        if (tileExtractPath.startsWith("file://")) {
+          String uriPath = Uri.parse(tileExtractPath).getPath();
+          if (uriPath != null && !uriPath.isEmpty()) resolvedPath = uriPath;
+        }
+        File archive = new File(resolvedPath);
+        if (!archive.isFile() || !archive.canRead()) {
+          throw new IllegalArgumentException("Valhalla archive is not readable at resolved path: " + resolvedPath);
+        }
+        if (archive.length() < 1000000000L) {
+          throw new IllegalArgumentException("Valhalla archive is unexpectedly small (" + archive.length() + " bytes). Expected the full UK archive.");
+        }
+        if (engine == null || !resolvedPath.equals(activeConfigPath)) {
           closeEngineInternal();
           engine = new Valhalla(
             getReactApplicationContext(),
-            ValhallaConfigFactory.INSTANCE.usingTileExtract(tileExtractPath, null)
+            ValhallaConfigFactory.INSTANCE.usingTileExtract(resolvedPath, null)
           );
-          activeConfigPath = tileExtractPath;
+          activeConfigPath = resolvedPath;
         }
         promise.resolve(engine.routeRaw(requestJson));
       } catch (Throwable error) {
