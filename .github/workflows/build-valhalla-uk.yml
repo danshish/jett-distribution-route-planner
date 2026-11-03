@@ -63,6 +63,17 @@ jobs:
             -o custom_files/route-test.json
           grep -q '"trip"' custom_files/route-test.json
           echo "UK offline route test passed."
+          # Regression test the exact Blackpool-area coordinates reported by Jett Pal.
+          curl -fsS http://127.0.0.1:8002/route \
+            -H 'Content-Type: application/json' \
+            --data '{"locations":[{"lat":53.794210,"lon":-3.042881,"type":"break","radius":5000},{"lat":53.819915,"lon":-3.037163,"type":"break","radius":5000}],"costing":"auto","directions_options":{"units":"miles"}}' \
+            -o custom_files/blackpool-route-test.json
+          if ! grep -q '"trip"' custom_files/blackpool-route-test.json; then
+            echo "ERROR: Blackpool-area route test failed:"
+            cat custom_files/blackpool-route-test.json
+            exit 1
+          fi
+          echo "Blackpool-area offline route test passed."
           ls -lh custom_files/valhalla_tiles.tar
           sha256sum custom_files/valhalla_tiles.tar
 
