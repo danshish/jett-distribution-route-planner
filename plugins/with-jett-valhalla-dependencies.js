@@ -169,30 +169,24 @@ module.exports = function withJettValhallaDependencies(config) {
       }
     }
 
-    // The Valhalla wrapper contains Java 21 bytecode. Use JDK 21 and align
-    // Java and Kotlin bytecode targets at 21 so javac can read the API.
+    // Use JDK 21 for the build, with matching Android-compatible Java 17
+    // bytecode targets for javac and Kotlin.
     if (/compileOptions\s*\{/.test(contents)) {
       contents = contents.replace(/compileOptions\s*\{/, (match) =>
-        match + "\n        sourceCompatibility JavaVersion.VERSION_21\n        targetCompatibility JavaVersion.VERSION_21"
+        match + "\n        sourceCompatibility JavaVersion.VERSION_17\n        targetCompatibility JavaVersion.VERSION_17"
       );
     } else {
       contents = contents.replace(/android\s*\{/, (match) =>
-        match + "\n    compileOptions { sourceCompatibility JavaVersion.VERSION_21; targetCompatibility JavaVersion.VERSION_21 }"
+        match + "\n    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }"
       );
     }
 
     if (/kotlinOptions\s*\{/.test(contents)) {
-      contents = contents.replace(/kotlinOptions\s*\{/, (match) => match + '\n        jvmTarget = "21"');
+      contents = contents.replace(/kotlinOptions\s*\{/, (match) => match + '\n        jvmTarget = "17"');
     } else {
       contents = contents.replace(/android\s*\{/, (match) =>
-        match + '\n    kotlinOptions { jvmTarget = "21" }'
+        match + '\n    kotlinOptions { jvmTarget = "17" }'
       );
-    }
-
-    // Force every app JavaCompile task to Java 21. Expo/AGP can otherwise
-    // retain the default Java 17 task target even when android.compileOptions changes.
-    if (!contents.includes("tasks.withType(org.gradle.api.tasks.compile.JavaCompile)")) {
-      contents += `\n\ntasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {\n    sourceCompatibility = JavaVersion.VERSION_21.toString()\n    targetCompatibility = JavaVersion.VERSION_21.toString()\n}\n`;
     }
 
     mod.modResults.contents = contents;
