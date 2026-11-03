@@ -1001,14 +1001,25 @@ async function locateRouteStops(){
   }catch(error){Alert.alert("Routing data not added",error.message||"Could not import the Valhalla tile archive.");}
  }
  async function calculateOfflineLeg(from,to){
-  if(!valhallaTilesPath)throw new Error("Import a Valhalla UK tile-extract .tar file first. The PMTiles map file is not road-routing data.");
+  if(!valhallaTilesPath)throw new Error("Import a Valhalla UK tile-extract .tar file first. The PMTiles map is not routing data.");
   if(!NativeModules.JettValhalla?.routeWithTileExtract)throw new Error("The installed app does not contain the Valhalla native bridge yet. Build and install the latest test APK.");
-  const request={locations:[{lat:Number(from.latitude??from.lat),lon:Number(from.longitude??from.lon),type:"break",radius:5000,search_cutoff:50000},{lat:Number(to.lat),lon:Number(to.lon),type:"break",radius:1500,search_cutoff:50000}],costing:"auto",directions_options:{units:"miles"}};
-  const raw=await NativeModules.JettValhalla.routeWithTileExtract(valhallaTilesPath,JSON.stringify(request));
-  const data=JSON.parse(raw);
-  const leg=data.trip?.legs?.[0];
-  const maneuvers=leg?.maneuvers||[];
-  if(!leg||!maneuvers.length)throw new Error("Valhalla returned no usable driving directions for this leg.");
+  const startLat=Number(from.latitude??from.lat),startLon=Number(from.longitude??from.lon),endLat=Number(to.lat),endLon=Number(to.lon);
+  const point=(lat,lon)=>Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
+  if(!point(startLat,startLon))throw new Error("GPS diagnostic: the phone returned invalid coordinates ("+startLat+", "+startLon+"). Check Android location permission and GPS.");
+  if(!point(endLat,endLon))throw new Error("Stop diagnostic: "+(to.name||to.address||"Next delivery stop")+" has invalid saved coordinates ("+endLat+", "+endLon+"). Re-find this stop while online.");
+  const request={locations:[{lat:startLat,lon:startLon,type:"break",radius:5000},{lat:endLat,lon:endLon,type:"break",radius:1500}],costing:"auto",directions_options:{units:"miles"}};
+  let raw;
+  try{raw=await NativeModules.JettValhalla.routeWithTileExtract(valhallaTilesPath,JSON.stringify(request));}
+  catch(error){
+   const message=String(error?.message||error||"Unknown Valhalla error");
+   const accuracy=Number.isFinite(Number(from.accuracy))?Math.round(Number(from.accuracy))+" m":"not reported";
+   if(/171|No suitable edges near location/i.test(message))throw new Error("ROAD-MATCH DIAGNOSTIC (Valhalla 171): GPS "+startLat.toFixed(6)+", "+startLon.toFixed(6)+" (accuracy "+accuracy+"); next stop "+endLat.toFixed(6)+", "+endLon.toFixed(6)+". Valhalla cannot match one of these points to a road in the imported UK routing archive. Check archive coverage and whether the stop pin is on/near a mapped road. Original error: "+message);
+   throw new Error("Valhalla routing diagnostic: start "+startLat.toFixed(6)+", "+startLon.toFixed(6)+"; destination "+endLat.toFixed(6)+", "+endLon.toFixed(6)+". "+message);
+  }
+  let data;try{data=JSON.parse(raw);}catch{throw new Error("Valhalla returned an unreadable response for GPS "+startLat.toFixed(6)+", "+startLon.toFixed(6)+" and stop "+endLat.toFixed(6)+", "+endLon.toFixed(6)+".");}
+  if(data.error)throw new Error("Valhalla route diagnostic: "+(data.error.message||JSON.stringify(data.error))+" (GPS "+startLat.toFixed(6)+", "+startLon.toFixed(6)+"; stop "+endLat.toFixed(6)+", "+endLon.toFixed(6)+").");
+  const leg=data.trip?.legs?.[0];const maneuvers=leg?.maneuvers||[];
+  if(!leg||!maneuvers.length)throw new Error("Valhalla returned no usable directions. GPS "+startLat.toFixed(6)+", "+startLon.toFixed(6)+"; stop "+endLat.toFixed(6)+", "+endLon.toFixed(6)+".");
   return {miles:Number(data.trip.summary?.length||0),minutes:Math.round(Number(data.trip.summary?.time||0)/60),maneuvers:maneuvers.map((m,i)=>({id:i,instruction:m.instruction||m.verbal_pre_transition_instruction||"Continue",length:Number(m.length||0)}))};
  }
  async function downloadOfflineUKMap(){
