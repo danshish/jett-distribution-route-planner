@@ -128,9 +128,16 @@ module.exports = function withJettValhallaDependencies(config) {
 
   config = withAppBuildGradle(config, (mod) => {
     let contents = mod.modResults.contents;
-    const dependency = "implementation 'io.github.rallista:valhalla-mobile:0.6.4'";
-    if (!contents.includes(dependency)) {
-      contents = contents.replace(/dependencies\s*\{/, (match) => match + "\n    " + dependency);
+    const dependencies = [
+      "implementation 'io.github.rallista:valhalla-mobile:0.6.4'",
+      "implementation 'io.github.rallista:valhalla-models:0.5.2'",
+      "implementation 'io.github.rallista:valhalla-models-config:0.5.2'",
+      "implementation 'com.stadiamaps:osrm-openapi:0.0.10'",
+    ];
+    for (const dependency of dependencies) {
+      if (!contents.includes(dependency)) {
+        contents = contents.replace(/dependencies\s*\{/, (match) => match + "\n    " + dependency);
+      }
     }
 
     // The Valhalla wrapper contains Java 21 bytecode. Use JDK 21 and align
