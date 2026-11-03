@@ -177,11 +177,21 @@ module.exports = function withJettValhallaDependencies(config) {
       );
     }
 
-    // AGP applies its Java 17 defaults after the Android DSL is evaluated in
-    // this Expo-generated project. Re-apply the target after every project has
-    // finished evaluation so the actual JavaCompile tasks use Java 21.
-    if (!contents.includes("gradle.projectsEvaluated")) {
-      contents += `\n\ngradle.projectsEvaluated {\n    def jdk21 = javaToolchains.compilerFor {\n        languageVersion = JavaLanguageVersion.of(21)\n    }\n    tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {\n        javaCompiler = jdk21.get()\n        sourceCompatibility = JavaVersion.VERSION_21.toString()\n        targetCompatibility = JavaVersion.VERSION_21.toString()\n    }\n}\n`;
+    // Select the JDK 21 compiler during task configuration. Register this
+    // before Gradle realises/finalises JavaCompile tasks; projectsEvaluated is
+    // too late because AGP may already have locked javaCompiler by then.
+    if (!contents.includes("javaToolchains.compilerFor")) {
+      contents += `
+
+// The Valhalla wrapper AAR is built with Java 21 bytecode.
+tasks.withType(org.gradle.api.tasks.compile.JavaCompile).configureEach {
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    sourceCompatibility = JavaVersion.VERSION_21.toString()
+    targetCompatibility = JavaVersion.VERSION_21.toString()
+}
+`;
     }
 
     mod.modResults.contents = contents;
