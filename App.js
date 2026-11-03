@@ -1003,7 +1003,7 @@ async function locateRouteStops(){
  async function calculateOfflineLeg(from,to){
   if(!valhallaTilesPath)throw new Error("Import a Valhalla UK tile-extract .tar file first. The PMTiles map file is not road-routing data.");
   if(!NativeModules.JettValhalla?.routeWithTileExtract)throw new Error("The installed app does not contain the Valhalla native bridge yet. Build and install the latest test APK.");
-  const request={locations:[{lat:Number(from.latitude??from.lat),lon:Number(from.longitude??from.lon),type:"break"},{lat:Number(to.lat),lon:Number(to.lon),type:"break"}],costing:"auto",directions_options:{units:"miles"}};
+  const request={locations:[{lat:Number(from.latitude??from.lat),lon:Number(from.longitude??from.lon),type:"break",radius:5000,search_cutoff:50000},{lat:Number(to.lat),lon:Number(to.lon),type:"break",radius:1500,search_cutoff:50000}],costing:"auto",directions_options:{units:"miles"}};
   const raw=await NativeModules.JettValhalla.routeWithTileExtract(valhallaTilesPath,JSON.stringify(request));
   const data=JSON.parse(raw);
   const leg=data.trip?.legs?.[0];
