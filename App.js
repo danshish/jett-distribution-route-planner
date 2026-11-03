@@ -86,7 +86,7 @@ useEffect(() => {
  },[offlineNavActive]);
  useEffect(()=>{
   if(offlineNavActive&&driverPosition&&navigationCameraRef.current){
-   navigationCameraRef.current.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:16,duration:700});
+   navigationCameraRef.current.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:18,duration:700});
   }
  },[offlineNavActive,driverPosition]);
  useEffect(()=>{
@@ -1120,7 +1120,7 @@ async function locateRouteStops(){
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   {offlineNavActive&&offlineMapPath?<View style={{height:390,borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:C.green,marginBottom:12}}>
    <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
-    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:16}}/>
+    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:18}}/>
     {offlineRouteCoordinates.length>1?<GeoJSONSource id="active-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="active-offline-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":9,"line-opacity":0.95}}/><Layer id="active-offline-route-line" type="line" paint={{"line-color":"#087cf0","line-width":6,"line-opacity":1}}/></GeoJSONSource>:null}
     {driverPosition?<GeoJSONSource id="live-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]}}}><Layer id="driver-position-halo" type="circle" paint={{"circle-radius":17,"circle-color":"#1687ff","circle-opacity":0.2}}/><Layer id="driver-position-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
     {nextOfflineStop?<GeoJSONSource id="active-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="active-destination-pin" type="circle" paint={{"circle-radius":11,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
