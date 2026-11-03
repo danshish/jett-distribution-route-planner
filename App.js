@@ -56,6 +56,8 @@ export default function App(){
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const navigationCameraRef=useRef(null);
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0);
+ const [rerouting,setRerouting]=useState(false),[distanceToManeuver,setDistanceToManeuver]=useState(null);
+ const lastRerouteAt=useRef(0);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
@@ -85,8 +87,33 @@ useEffect(() => {
   return ()=>{if(subscription)subscription.remove();};
  },[offlineNavActive]);
  useEffect(()=>{
+  if(!offlineNavActive||!driverPosition||offlineRouteCoordinates.length<2||!nextOfflineStop)return;
+  const rad=v=>v*Math.PI/180;
+  let nearest=Infinity,nearestIndex=0;
+  offlineRouteCoordinates.forEach((point,index)=>{
+   const dLat=rad(point[1]-driverPosition.latitude),dLon=rad(point[0]-driverPosition.longitude),a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(point[1]))*Math.sin(dLon/2)**2,d=6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+   if(d<nearest){nearest=d;nearestIndex=index;}
+  });
+  const active=offlineDirections[currentManeuverIndex];
+  if(active){
+   let metres=0;
+   for(let i=nearestIndex;i<Math.min(active.beginShapeIndex||nearestIndex,offlineRouteCoordinates.length-1);i++){
+    const a=offlineRouteCoordinates[i],b=offlineRouteCoordinates[i+1];if(!b)break;
+    const dLat=rad(b[1]-a[1]),dLon=rad(b[0]-a[0]),q=Math.sin(dLat/2)**2+Math.cos(rad(a[1]))*Math.cos(rad(b[1]))*Math.sin(dLon/2)**2;
+    metres+=6371000*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));
+   }
+   setDistanceToManeuver(metres);
+  }
+  if(nearest>45&&Date.now()-lastRerouteAt.current>25000&&!rerouting){
+   lastRerouteAt.current=Date.now();setRerouting(true);
+   calculateOfflineLeg(driverPosition,nextOfflineStop).then(leg=>{
+    if(leg.coordinates?.length>1){setOfflineDirections(leg.maneuvers);setOfflineRouteCoordinates(leg.coordinates);setCurrentManeuverIndex(0);setDistanceToManeuver(null);}
+   }).catch(error=>console.warn("Offline reroute:",error?.message||error)).finally(()=>setRerouting(false));
+  }
+ },[offlineNavActive,driverPosition,offlineRouteCoordinates,offlineDirections,currentManeuverIndex,nextOfflineStop,rerouting]);
+ useEffect(()=>{
   if(offlineNavActive&&driverPosition&&navigationCameraRef.current){
-   navigationCameraRef.current.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:18,duration:700});
+   navigationCameraRef.current.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:20,duration:700});
   }
   if(offlineNavActive&&driverPosition&&offlineRouteCoordinates.length>1&&offlineDirections.length){
    const rad=v=>v*Math.PI/180;
@@ -1128,17 +1155,17 @@ async function locateRouteStops(){
  const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   {offlineNavActive&&offlineMapPath?<View style={{height:390,borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:C.green,marginBottom:12}}>
    <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
-    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:18}}/>
+    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20}}/>
     {offlineRouteCoordinates.length>1?<GeoJSONSource id="active-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="active-offline-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":9,"line-opacity":0.95}}/><Layer id="active-offline-route-line" type="line" paint={{"line-color":"#087cf0","line-width":6,"line-opacity":1}}/></GeoJSONSource>:null}
     {driverPosition?<GeoJSONSource id="live-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]}}}><Layer id="driver-position-halo" type="circle" paint={{"circle-radius":17,"circle-color":"#1687ff","circle-opacity":0.2}}/><Layer id="driver-position-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
     {nextOfflineStop?<GeoJSONSource id="active-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="active-destination-pin" type="circle" paint={{"circle-radius":11,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
    </MapLibreMap>
-   <View style={{position:"absolute",left:10,right:10,top:10,backgroundColor:"rgba(6,21,29,0.94)",padding:12,borderRadius:10}}><Text style={{color:"#ffffff",fontWeight:"900",fontSize:16}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text><Text style={{color:"#ffffff",marginTop:4}}>{offlineDirections[currentManeuverIndex]?.instruction||"Follow the blue route"}</Text></View>
+   <View style={{position:"absolute",left:10,right:10,top:10,backgroundColor:"rgba(6,21,29,0.94)",padding:12,borderRadius:10}}><Text style={{color:"#ffffff",fontWeight:"900",fontSize:16}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text><Text style={{color:"#ffffff",marginTop:4}}>{rerouting?"Recalculating route…":offlineDirections[currentManeuverIndex]?.instruction||"Follow the blue route"}</Text></View>
    <View style={{position:"absolute",bottom:10,left:10,backgroundColor:"rgba(6,21,29,0.9)",padding:8,borderRadius:8}}><Text style={{color:"#ffffff",fontSize:12}}>Blue dot: your GPS · Blue line: offline route</Text></View>
   </View>:null}
   <View style={s.card}>
    <Text style={s.cardTitle}>OFFLINE NAVIGATION — FIRST STAGE</Text>
-   {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>Offline driving directions from the Valhalla road network:</Text>{offlineDirections.map(item=><Text key={item.id} style={[s.resultTitle,item.id===currentManeuverIndex?{color:C.green}:null]}>{item.id===currentManeuverIndex?"▶ ":""}{item.id+1}. {item.instruction}</Text>)}<Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title={offlineRouteBusy?"Calculating offline directions…":"Start Offline Route"} disabled={offlineRouteBusy} onPress={startOfflineRoute}/></>}
+   {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.greenText}>{rerouting?"Finding a new road route…":distanceToManeuver!=null?"Next turn in "+(distanceToManeuver>=1000?(distanceToManeuver/1000).toFixed(1)+" km":Math.round(distanceToManeuver)+" m"):"Following offline route"}</Text><Text style={s.small}>Offline driving directions from the Valhalla road network:</Text>{offlineDirections.map(item=><Text key={item.id} style={[s.resultTitle,item.id===currentManeuverIndex?{color:C.green}:null]}>{item.id===currentManeuverIndex?"▶ ":""}{item.id+1}. {item.instruction}</Text>)}<Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title={offlineRouteBusy?"Calculating offline directions…":"Start Offline Route"} disabled={offlineRouteBusy} onPress={startOfflineRoute}/></>}
   </View>
   <View style={s.card}>
    <Text style={s.cardTitle}>CURRENT DELIVERY ROUTE</Text>
