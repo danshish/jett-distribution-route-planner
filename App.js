@@ -988,7 +988,7 @@ async function locateRouteStops(){
    const picked=await DocumentPicker.getDocumentAsync({type:"*/*",copyToCacheDirectory:true,multiple:false});
    if(picked.canceled||!picked.assets?.length)return;
    const file=picked.assets[0];
-   if(!/\\.tar$/i.test(String(file.name||""))){
+   if(!/\.tar$/i.test(String(file.name||""))){
     throw new Error("Choose a Valhalla tile-extract .tar file. The UK .pmtiles display map is not routing data.");
    }
    const target=FileSystem.documentDirectory+"valhalla-uk-tiles.tar";
