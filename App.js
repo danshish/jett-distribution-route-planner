@@ -504,7 +504,7 @@ async function importGoogleSheet(){
  }
  async function optimise(){
   if(!online)return Alert.alert("Internet required","Connect to the internet to calculate real road routes.");
-  if(stops.length<2)return Alert.alert("Add more stops","Add at least two delivery stops to optimise.");
+  if(stops.length<1)return Alert.alert("Add an address","Add at least one delivery address to plan a route.");if(stops.length===1&&!startPoint)return Alert.alert("Choose a starting point","For a single-address route, tap Use My Current Location (or enter a starting address) so Jett can calculate the journey.");
   if(stops.some(x=>!cache[x.key]||!Number.isFinite(Number(cache[x.key].lat))||!Number.isFinite(Number(cache[x.key].lon))))return Alert.alert("Find locations first","Search each delivery address while online so Jett has coordinates for every stop.");
   setBusy(true);
   try{
