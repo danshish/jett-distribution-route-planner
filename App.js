@@ -55,7 +55,7 @@ export default function App(){
  const [valhallaTilesPath,setValhallaTilesPath]=useState(null),[offlineDirections,setOfflineDirections]=useState([]),[offlineRouteBusy,setOfflineRouteBusy]=useState(false),[offlineRouteCoordinates,setOfflineRouteCoordinates]=useState([]);
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const navigationCameraRef=useRef(null);
- const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0);
+ const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0),[fullScreenNavigation,setFullScreenNavigation]=useState(false);
  const [rerouting,setRerouting]=useState(false),[distanceToManeuver,setDistanceToManeuver]=useState(null);
  const lastRerouteAt=useRef(0);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
@@ -1146,7 +1146,23 @@ async function locateRouteStops(){
   finally{setOfflineRouteBusy(false);}
  }
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));setOfflineNavActive(false);setOfflineRouteCoordinates([]);setOfflineDirections([]);}
- const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
+ const mapScreen=()=> fullScreenNavigation&&offlineNavActive?<View style={{flex:1,backgroundColor:C.bg}}>
+  <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
+   <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20.5}}/>
+   {offlineRouteCoordinates.length>1?<GeoJSONSource id="fullscreen-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="fullscreen-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":10,"line-opacity":0.95}}/><Layer id="fullscreen-route-line" type="line" paint={{"line-color":"#087cf0","line-width":7,"line-opacity":1}}/></GeoJSONSource>:null}
+   {driverPosition?<GeoJSONSource id="fullscreen-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]}}}><Layer id="fullscreen-driver-halo" type="circle" paint={{"circle-radius":19,"circle-color":"#1687ff","circle-opacity":0.22}}/><Layer id="fullscreen-driver-dot" type="circle" paint={{"circle-radius":9,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
+   {nextOfflineStop?<GeoJSONSource id="fullscreen-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="fullscreen-destination-pin" type="circle" paint={{"circle-radius":12,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
+  </MapLibreMap>
+  <View style={{position:"absolute",top:10,left:12,right:12,backgroundColor:"rgba(6,21,29,0.96)",borderRadius:15,padding:16,borderWidth:1,borderColor:C.green}}>
+   <Text style={{color:C.green2,fontSize:12,fontWeight:"900"}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text>
+   <Text style={{color:"#ffffff",fontSize:23,fontWeight:"900",marginTop:7}}>{rerouting?"Recalculating route…":offlineDirections[currentManeuverIndex]?.instruction||"Follow the blue route"}</Text>
+   {distanceToManeuver!=null?<Text style={{color:C.green2,fontWeight:"900",fontSize:19,marginTop:6}}>{distanceToManeuver>1000?(distanceToManeuver/1000).toFixed(1)+" km":Math.round(distanceToManeuver)+" m"} to next turn</Text>:null}
+  </View>
+  <View style={{position:"absolute",bottom:18,left:12,right:12,flexDirection:"row",gap:10}}>
+   <TouchableOpacity onPress={()=>setFullScreenNavigation(false)} style={{flex:1,backgroundColor:C.panel,borderColor:C.green,borderWidth:1.5,borderRadius:13,padding:16,alignItems:"center"}}><Text style={{color:C.green,fontWeight:"900",fontSize:15}}>Back to Route Screen</Text></TouchableOpacity>
+   <TouchableOpacity onPress={()=>setFullScreenNavigation(false)} style={{backgroundColor:C.green,borderRadius:13,paddingHorizontal:18,justifyContent:"center"}}><Text style={{color:"#062010",fontWeight:"900"}}>Exit</Text></TouchableOpacity>
+  </View>
+ </View>:<ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   {offlineNavActive&&offlineMapPath?<View style={{height:390,borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:C.green,marginBottom:12}}>
    <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
     <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20.5}}/>
@@ -1159,7 +1175,7 @@ async function locateRouteStops(){
   </View>:null}
   <View style={s.card}>
    <Text style={s.cardTitle}>OFFLINE NAVIGATION — FIRST STAGE</Text>
-   {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>Offline driving directions from the Valhalla road network:</Text>{offlineDirections.map(item=><Text key={item.id} style={[s.resultTitle,item.id===currentManeuverIndex?{color:C.green}:null]}>{item.id===currentManeuverIndex?"▶ ":""}{item.id+1}. {item.instruction}</Text>)}<Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title={offlineRouteBusy?"Calculating offline directions…":"Start Offline Route"} disabled={offlineRouteBusy} onPress={startOfflineRoute}/></>}
+   {offlineNavActive&&nextOfflineStop?<><Button title="Open Full-Screen Navigation" onPress={()=>setFullScreenNavigation(true)}/><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>Offline driving directions from the Valhalla road network:</Text>{offlineDirections.map(item=><Text key={item.id} style={[s.resultTitle,item.id===currentManeuverIndex?{color:C.green}:null]}>{item.id===currentManeuverIndex?"▶ ":""}{item.id+1}. {item.instruction}</Text>)}<Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title={offlineRouteBusy?"Calculating offline directions…":"Start Offline Route"} disabled={offlineRouteBusy} onPress={startOfflineRoute}/></>}
   </View>
   <View style={s.card}>
    <Text style={s.cardTitle}>CURRENT DELIVERY ROUTE</Text>
@@ -1210,9 +1226,9 @@ async function locateRouteStops(){
   <View style={{flex:1}}>
     {body}
   </View>
-  <View style={{paddingBottom:Platform.OS==="android"?30:12,backgroundColor:C.bg}}>
+  {!fullScreenNavigation?<View style={{paddingBottom:Platform.OS==="android"?30:12,backgroundColor:C.bg}}>
     <Nav/>
-  </View>
+  </View>:null}
   {splashVisible && (
     <Animated.View
       pointerEvents="none"
