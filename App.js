@@ -1047,9 +1047,10 @@ async function locateRouteStops(){
       <Layer id="delivery-stop-circles" type="circle" paint={{"circle-radius":15,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
       <Layer id="delivery-stop-numbers" type="symbol" layout={{"text-field":["get","order"],"text-font":["Noto Sans Regular"],"text-size":12,"text-allow-overlap":true}} paint={{"text-color":"#062010"}}/>
      </GeoJSONSource>
-     {driverPosition?<GeoJSONSource id="driver-location" data={{type:"Feature",geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]},properties:{}}}>
+     {driverPosition?<GeoJSONSource id="driver-location" data={{type:"Feature",geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]},properties:{heading:gpsHeading??0}}}>
       <Layer id="driver-location-halo" type="circle" paint={{"circle-radius":13,"circle-color":"#ffffff","circle-opacity":0.95}}/>
       <Layer id="driver-location-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#168cff","circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
+      {gpsHeading!=null?<Layer id="driver-direction-arrow" type="symbol" layout={{"text-field":"▲","text-font":["Noto Sans Regular"],"text-size":23,"text-rotate":["get","heading"],"text-rotation-alignment":"map","text-allow-overlap":true,"text-ignore-placement":true}} paint={{"text-color":"#0757b8","text-halo-color":"#ffffff","text-halo-width":2}}/>:null}
      </GeoJSONSource>:null}
    </MapLibreMap>
    <View style={{position:"absolute",top:10,left:10,right:10,flexDirection:"row",justifyContent:"space-between",alignItems:"center"}}>
