@@ -57,6 +57,7 @@ export default function App(){
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const navigationCameraRef=useRef(null);
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0),[fullScreenNavigation,setFullScreenNavigation]=useState(false);
+ const [navigationZoom,setNavigationZoom]=useState(20.5),[navigationPitch,setNavigationPitch]=useState(0),[snappedDriverPosition,setSnappedDriverPosition]=useState(null);
  const [rerouting,setRerouting]=useState(false),[distanceToManeuver,setDistanceToManeuver]=useState(null);
  const lastRerouteAt=useRef(0);
  const lastSpokenManeuver=useRef(-1);
@@ -93,17 +94,19 @@ useEffect(() => {
  useEffect(()=>{
   if(!offlineNavActive)return;
   let subscription=null;
-  Location.watchPositionAsync({accuracy:Location.Accuracy.High,timeInterval:2000,distanceInterval:5},position=>setDriverPosition(position.coords)).then(value=>{subscription=value;}).catch(()=>{});
+  Location.watchPositionAsync({accuracy:Location.Accuracy.BestForNavigation||Location.Accuracy.High,timeInterval:1000,distanceInterval:2},position=>setDriverPosition(position.coords)).then(value=>{subscription=value;}).catch(()=>{});
   return ()=>{if(subscription)subscription.remove();};
  },[offlineNavActive]);
  useEffect(()=>{
   if(offlineNavActive&&driverPosition&&navigationCameraRef.current){
-   navigationCameraRef.current.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:20.5,duration:700});
+   navigationCameraRef.current.easeTo({center:[(snappedDriverPosition||driverPosition).longitude,(snappedDriverPosition||driverPosition).latitude],zoom:navigationZoom,pitch:navigationPitch,duration:250});
   }
   if(offlineNavActive&&driverPosition&&offlineRouteCoordinates.length>1&&offlineDirections.length){
    const rad=v=>v*Math.PI/180;
    let nearestIndex=0,nearestDistance=Infinity;
    offlineRouteCoordinates.forEach((point,index)=>{const dLat=rad(point[1]-driverPosition.latitude),dLon=rad(point[0]-driverPosition.longitude),a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(point[1]))*Math.sin(dLon/2)**2,d=6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));if(d<nearestDistance){nearestDistance=d;nearestIndex=index;}});
+   const nearestPoint=offlineRouteCoordinates[nearestIndex];
+   setSnappedDriverPosition(nearestDistance<=65&&nearestPoint?{latitude:nearestPoint[1],longitude:nearestPoint[0]}:null);
    let activeIndex=0;
    offlineDirections.forEach((item,index)=>{if(Number(item.beginShapeIndex||0)<=nearestIndex)activeIndex=index;});
    setCurrentManeuverIndex(activeIndex);
@@ -1160,13 +1163,18 @@ async function locateRouteStops(){
   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20.5}}/>
    {offlineRouteCoordinates.length>1?<GeoJSONSource id="fullscreen-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="fullscreen-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":10,"line-opacity":0.95}}/><Layer id="fullscreen-route-line" type="line" paint={{"line-color":"#087cf0","line-width":7,"line-opacity":1}}/></GeoJSONSource>:null}
-   {driverPosition?<GeoJSONSource id="fullscreen-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]}}}><Layer id="fullscreen-driver-halo" type="circle" paint={{"circle-radius":19,"circle-color":"#1687ff","circle-opacity":0.22}}/><Layer id="fullscreen-driver-dot" type="circle" paint={{"circle-radius":9,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
+   {(snappedDriverPosition||driverPosition)?<GeoJSONSource id="fullscreen-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[(snappedDriverPosition||driverPosition).longitude,(snappedDriverPosition||driverPosition).latitude]}}}><Layer id="fullscreen-driver-halo" type="circle" paint={{"circle-radius":19,"circle-color":"#1687ff","circle-opacity":0.22}}/><Layer id="fullscreen-driver-dot" type="circle" paint={{"circle-radius":9,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
    {nextOfflineStop?<GeoJSONSource id="fullscreen-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="fullscreen-destination-pin" type="circle" paint={{"circle-radius":12,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
   </MapLibreMap>
   <View style={{position:"absolute",top:10,left:12,right:12,backgroundColor:"rgba(6,21,29,0.96)",borderRadius:15,padding:16,borderWidth:1,borderColor:C.green}}>
    <Text style={{color:C.green2,fontSize:12,fontWeight:"900"}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text>
    <Text style={{color:"#ffffff",fontSize:23,fontWeight:"900",marginTop:7}}>{rerouting?"Recalculating route…":offlineDirections[currentManeuverIndex]?.instruction||"Follow the blue route"}</Text>
    {distanceToManeuver!=null?<Text style={{color:C.green2,fontWeight:"900",fontSize:19,marginTop:6}}>{distanceToManeuver>1000?(distanceToManeuver/1000).toFixed(1)+" km":Math.round(distanceToManeuver)+" m"} to next turn</Text>:null}
+  </View>
+  <View style={{position:"absolute",right:12,top:185,gap:8}}>
+   <TouchableOpacity onPress={()=>setNavigationZoom(z=>Math.min(22,z+0.5))} style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:"#fff",fontSize:28,fontWeight:"900"}}>+</Text></TouchableOpacity>
+   <TouchableOpacity onPress={()=>setNavigationZoom(z=>Math.max(15,z-0.5))} style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:"#fff",fontSize:28,fontWeight:"900"}}>−</Text></TouchableOpacity>
+   <TouchableOpacity onPress={()=>setNavigationPitch(p=>p===0?50:0)} style={{padding:10,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center"}}><Text style={{color:C.green,fontWeight:"900"}}>{navigationPitch===0?"3D":"2D"}</Text></TouchableOpacity>
   </View>
   <View style={{position:"absolute",bottom:18,left:12,right:12,flexDirection:"row",gap:10}}>
    <TouchableOpacity onPress={()=>setFullScreenNavigation(false)} style={{flex:1,backgroundColor:C.panel,borderColor:C.green,borderWidth:1.5,borderRadius:13,padding:16,alignItems:"center"}}><Text style={{color:C.green,fontWeight:"900",fontSize:15}}>Back to Route Screen</Text></TouchableOpacity>
