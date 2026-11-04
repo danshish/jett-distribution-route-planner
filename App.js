@@ -54,6 +54,7 @@ export default function App(){
  const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
  const [valhallaTilesPath,setValhallaTilesPath]=useState(null),[offlineDirections,setOfflineDirections]=useState([]),[offlineRouteBusy,setOfflineRouteBusy]=useState(false),[offlineRouteCoordinates,setOfflineRouteCoordinates]=useState([]);
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
+ const [mapExpanded,setMapExpanded]=useState(false);
  const navigationCameraRef=useRef(null);
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0);
  const [rerouting,setRerouting]=useState(false),[distanceToManeuver,setDistanceToManeuver]=useState(null);
@@ -1168,7 +1169,20 @@ async function locateRouteStops(){
   finally{setOfflineRouteBusy(false);}
  }
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));setOfflineNavActive(false);setOfflineRouteCoordinates([]);setOfflineDirections([]);}
- const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
+ const mapScreen=()=> mapExpanded&&offlineMapPath?<View style={{flex:1,backgroundColor:C.bg}}>
+  <MapLibreMap style={{flex:1}} mapStyle={mapStyle} onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
+   <MapCamera initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:driverPosition?18:mapZoom}}/>
+   <GeoJSONSource id="expanded-delivery-stops" data={{type:"FeatureCollection",features:stops.filter(x=>x.lat!=null&&x.lon!=null).map((stop,index)=>({type:"Feature",id:String(stop.id||index),properties:{order:String(index+1)},geometry:{type:"Point",coordinates:[Number(stop.lon),Number(stop.lat)]}}))}}>
+    <Layer id="expanded-stop-circles" type="circle" paint={{"circle-radius":15,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
+    <Layer id="expanded-stop-numbers" type="symbol" layout={{"text-field":["get","order"],"text-font":["Noto Sans Regular"],"text-size":12,"text-allow-overlap":true}} paint={{"text-color":"#062010"}}/>
+   </GeoJSONSource>
+  </MapLibreMap>
+  <View style={{position:"absolute",top:12,left:12,right:12,flexDirection:"row",justifyContent:"space-between",alignItems:"center",backgroundColor:"rgba(6,21,29,0.94)",padding:10,borderRadius:12}}>
+   <Text style={{color:"#ffffff",fontWeight:"900",fontSize:15}}>JETT OFFLINE STREET MAP</Text>
+   <TouchableOpacity onPress={()=>setMapExpanded(false)} style={{backgroundColor:C.green,paddingHorizontal:16,paddingVertical:11,borderRadius:9}}><Text style={{color:"#062010",fontWeight:"900"}}>CLOSE MAP ✕</Text></TouchableOpacity>
+  </View>
+  <View style={{position:"absolute",bottom:14,left:12,right:12,backgroundColor:"rgba(6,21,29,0.9)",padding:9,borderRadius:9}}><Text style={{color:"#ffffff",fontSize:12,textAlign:"center"}}>{mapLoadStatus} · © OpenStreetMap contributors</Text></View>
+ </View>:<ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   {offlineNavActive&&offlineMapPath?<View style={{height:390,borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:C.green,marginBottom:12}}>
    <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
     <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20}}/>
@@ -1193,7 +1207,7 @@ async function locateRouteStops(){
    </View>):<Text style={s.small}>Import a delivery list or add addresses to see your stops here.</Text>}
    <Text style={[s.small,{marginTop:10}]}>Located stops: {stops.filter(x=>x.lat!=null&&x.lon!=null).length} of {stops.length}</Text><Button title={busy?"Locating addresses…":"Find coordinates for delivery stops"} disabled={busy||!stops.length} onPress={locateRouteStops} outline/>
   </View>
-  {offlineMapPath? <View style={{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
+  {offlineMapPath?<Button title="⛶  Enlarge Offline Map" onPress={()=>setMapExpanded(true)}/>:null}\n  {offlineMapPath? <View style={{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
    <MapLibreMap style={{flex:1}} mapStyle={mapStyle}
     onWillStartLoadingMap={()=>setMapLoadStatus("Loading map style…")}
     onDidFinishLoadingMap={()=>setMapLoadStatus("Map style loaded. Checking map tiles…")}
