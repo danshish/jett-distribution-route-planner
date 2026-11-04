@@ -1092,9 +1092,9 @@ async function locateRouteStops(){
   <View style={{flex:1}}>
     {body}
   </View>
-  <View style={{paddingBottom:Platform.OS==="android"?30:12,backgroundColor:C.bg}}>
+  {!offlineMapExpanded?<View style={{paddingBottom:Platform.OS==="android"?30:12,backgroundColor:C.bg}}>
     <Nav/>
-  </View>
+  </View>:null}
   {splashVisible && (
     <Animated.View
       pointerEvents="none"
