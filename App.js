@@ -1149,6 +1149,19 @@ async function locateRouteStops(){
  const mapCenter=mapBounds?[(mapBounds.minLon+mapBounds.maxLon)/2,(mapBounds.minLat+mapBounds.maxLat)/2]:[1.7,52.6];
  const mapSpan=mapBounds?Math.max(mapBounds.maxLon-mapBounds.minLon,(mapBounds.maxLat-mapBounds.minLat)*1.4,0.008):1;
  const mapZoom=mapBounds?Math.max(5,Math.min(14,Math.floor(Math.log2(360/mapSpan))-1)):11;
+ const snappedDriverPosition=driverPosition&&offlineRouteCoordinates.length>1?(()=>{
+  // Project the GPS fix onto the closest route segment so the blue marker sits on the road.
+  const lat0=driverPosition.latitude*Math.PI/180,cosLat=Math.cos(lat0),toXY=point=>({x:(point[0]-driverPosition.longitude)*111320*cosLat,y:(point[1]-driverPosition.latitude)*110540});
+  let best=null,bestDistance=Infinity;
+  for(let i=0;i<offlineRouteCoordinates.length-1;i++){
+   const a=toXY(offlineRouteCoordinates[i]),b=toXY(offlineRouteCoordinates[i+1]),dx=b.x-a.x,dy=b.y-a.y,len2=dx*dx+dy*dy;
+   if(len2<0.01)continue;
+   const t=Math.max(0,Math.min(1,-(a.x*dx+a.y*dy)/len2)),x=a.x+t*dx,y=a.y+t*dy,distance=Math.hypot(x,y);
+   if(distance<bestDistance){bestDistance=distance;best={x,y};}
+  }
+  if(!best||bestDistance>60)return driverPosition;
+  return {...driverPosition,latitude:driverPosition.latitude+best.y/110540,longitude:driverPosition.longitude+best.x/(111320*cosLat)};
+ })():driverPosition;
  const nextOfflineStop=stops.find(x=>!x.done);
  const distanceToNext=driverPosition&&nextOfflineStop&&nextOfflineStop.lat!=null&&nextOfflineStop.lon!=null?(()=>{const rad=v=>v*Math.PI/180;const dLat=rad(Number(nextOfflineStop.lat)-driverPosition.latitude),dLon=rad(Number(nextOfflineStop.lon)-driverPosition.longitude);const a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(Number(nextOfflineStop.lat)))*Math.sin(dLon/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));})():null;
  async function startOfflineRoute(){
@@ -1185,9 +1198,9 @@ async function locateRouteStops(){
  </View>:<ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   {offlineNavActive&&offlineMapPath?<View style={{height:390,borderRadius:16,overflow:"hidden",borderWidth:1,borderColor:C.green,marginBottom:12}}>
    <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
-    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20}}/>
+    <MapCamera ref={navigationCameraRef} initialViewState={{center:snappedDriverPosition?[snappedDriverPosition.longitude,snappedDriverPosition.latitude]:mapCenter,zoom:20}}/>
     {offlineRouteCoordinates.length>1?<GeoJSONSource id="active-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="active-offline-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":9,"line-opacity":0.95}}/><Layer id="active-offline-route-line" type="line" paint={{"line-color":"#087cf0","line-width":6,"line-opacity":1}}/></GeoJSONSource>:null}
-    {driverPosition?<GeoJSONSource id="live-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]}}}><Layer id="driver-position-halo" type="circle" paint={{"circle-radius":17,"circle-color":"#1687ff","circle-opacity":0.2}}/><Layer id="driver-position-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
+    {snappedDriverPosition?<GeoJSONSource id="live-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[snappedDriverPosition.longitude,snappedDriverPosition.latitude]}}}><Layer id="driver-position-halo" type="circle" paint={{"circle-radius":17,"circle-color":"#1687ff","circle-opacity":0.2}}/><Layer id="driver-position-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
     {nextOfflineStop?<GeoJSONSource id="active-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="active-destination-pin" type="circle" paint={{"circle-radius":11,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
    </MapLibreMap>
    <View style={{position:"absolute",left:10,right:10,top:10,backgroundColor:"rgba(6,21,29,0.94)",padding:12,borderRadius:10}}><Text style={{color:"#ffffff",fontWeight:"900",fontSize:16}}>NAVIGATING TO {nextOfflineStop?.name||nextOfflineStop?.address||"NEXT STOP"}</Text><Text style={{color:"#ffffff",marginTop:4}}>{rerouting?"Recalculating route…":offlineDirections[currentManeuverIndex]?.instruction||"Follow the blue route"}</Text></View>
