@@ -21,10 +21,10 @@ module.exports = function withAndroidSigning(config) {
       contents = contents.slice(0, insertAt) + releaseSigning + contents.slice(insertAt);
     }
 
-    const releaseBlock = /(release\\s*\\{[\\s\\S]*?signingConfig\\s+)signingConfigs\\.debug/;
+    const releaseBlock = /(release\s*\{[\s\S]*?signingConfig\s+)signingConfigs\.debug/;
     if (releaseBlock.test(contents)) {
       contents = contents.replace(releaseBlock, "$1signingConfigs.release");
-    } else if (!/release\\s*\\{[\\s\\S]*?signingConfig\\s+signingConfigs\\.release/.test(contents)) {
+    } else if (!/release\s*\{[\s\S]*?signingConfig\s+signingConfigs\.release/.test(contents)) {
       throw new Error("Jett Pal signing: could not switch release build to the permanent signing key");
     }
 
