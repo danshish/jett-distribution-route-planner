@@ -21,7 +21,8 @@
     "expo-sharing": "~14.0.7",
     "expo-image-picker": "~17.0.10",
     "react-native-svg": "15.12.1",
-    "@supabase/supabase-js": "^2.57.0"
+    "@supabase/supabase-js": "^2.57.0",
+    "expo-speech": "~14.0.7"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2"
