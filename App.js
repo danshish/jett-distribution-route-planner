@@ -10,6 +10,7 @@ import * as XLSX from "xlsx";
 import * as Location from "expo-location";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
+import * as Speech from "expo-speech";
 import Svg, { Path } from "react-native-svg";
 import { Map as MapLibreMap, Camera as MapCamera, GeoJSONSource, Layer } from "@maplibre/maplibre-react-native";
 
@@ -58,6 +59,7 @@ export default function App(){
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0),[fullScreenNavigation,setFullScreenNavigation]=useState(false);
  const [rerouting,setRerouting]=useState(false),[distanceToManeuver,setDistanceToManeuver]=useState(null);
  const lastRerouteAt=useRef(0);
+ const lastSpokenManeuver=useRef(-1);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
@@ -80,6 +82,14 @@ useEffect(() => {
   return () => clearTimeout(timer);
 }, [splashOpacity]);
  useEffect(()=>{(async()=>{try{const [c,r,s,m,l,vt,mp]=await Promise.all([AsyncStorage.getItem(CACHE),AsyncStorage.getItem(ROUTES),AsyncStorage.getItem(CURRENT),AsyncStorage.getItem("@jett_map_choice"),AsyncStorage.getItem("@jett_stock_loaded"),AsyncStorage.getItem("@jett_valhalla_tiles_path"),AsyncStorage.getItem("@jett_uk_pmtiles_path")]);if(c)setCache(JSON.parse(c));if(r)setSaved(JSON.parse(r));if(s)setStops(JSON.parse(s));if(m)setMapChoice(m);if(l)setStockLoaded(JSON.parse(l));if(vt)setValhallaTilesPath(vt);if(mp)setOfflineMapPath(mp);}catch{}})();const u=NetInfo.addEventListener(x=>setOnline(!!x.isConnected));NetInfo.fetch().then(x=>setOnline(!!x.isConnected));return u;},[]);
+ useEffect(()=>{
+  if(!offlineNavActive){Speech.stop();lastSpokenManeuver.current=-1;return;}
+  const maneuver=offlineDirections[currentManeuverIndex];
+  if(!maneuver||lastSpokenManeuver.current===currentManeuverIndex)return;
+  lastSpokenManeuver.current=currentManeuverIndex;
+  const instruction=String(maneuver.instruction||"");
+  if(instruction)Speech.speak(instruction,{language:"en-GB",rate:0.92,pitch:1.0});
+ },[offlineNavActive,currentManeuverIndex,offlineDirections]);
  useEffect(()=>{
   if(!offlineNavActive)return;
   let subscription=null;
