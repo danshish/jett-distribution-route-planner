@@ -1161,6 +1161,7 @@ async function locateRouteStops(){
   finally{setOfflineRouteBusy(false);}
  }
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));setOfflineNavActive(false);setOfflineRouteCoordinates([]);setOfflineDirections([]);}
+ async function recenterNavigation(){try{let coords=driverPosition;if(!coords){const p=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.BestForNavigation||Location.Accuracy.High});coords=p.coords;setDriverPosition(coords);}setSnappedDriverPosition(null);setNavigationZoom(z=>Math.max(z,21));navigationCameraRef.current?.easeTo({center:[coords.longitude,coords.latitude],zoom:Math.max(navigationZoom,21),pitch:navigationPitch,duration:350});}catch(e){Alert.alert("Location unavailable",e?.message||"Check that location services are switched on.");}}
  const mapScreen=()=> fullScreenNavigation&&offlineNavActive?<View style={{flex:1,backgroundColor:C.bg}}>
   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
    <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20.5}}/>
@@ -1174,6 +1175,7 @@ async function locateRouteStops(){
    {distanceToManeuver!=null?<Text style={{color:C.green2,fontWeight:"900",fontSize:19,marginTop:6}}>{distanceToManeuver>1000?(distanceToManeuver/1000).toFixed(1)+" km":Math.round(distanceToManeuver)+" m"} to next turn</Text>:null}
   </View>
   <View style={{position:"absolute",right:12,top:185,gap:8}}>
+   <TouchableOpacity onPress={recenterNavigation} accessibilityLabel="Centre map on my location" style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:C.green,fontSize:25,fontWeight:"900"}}>⌖</Text></TouchableOpacity>
    <TouchableOpacity onPress={()=>setNavigationZoom(z=>Math.min(22,z+0.5))} style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:"#fff",fontSize:28,fontWeight:"900"}}>+</Text></TouchableOpacity>
    <TouchableOpacity onPress={()=>setNavigationZoom(z=>Math.max(15,z-0.5))} style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:"#fff",fontSize:28,fontWeight:"900"}}>−</Text></TouchableOpacity>
    <TouchableOpacity onPress={()=>setNavigationPitch(p=>p===0?50:0)} style={{padding:10,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center"}}><Text style={{color:C.green,fontWeight:"900"}}>{navigationPitch===0?"3D":"2D"}</Text></TouchableOpacity>
