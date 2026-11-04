@@ -53,6 +53,7 @@ export default function App(){
  const [offlineMapPath,setOfflineMapPath]=useState(null),[mapImportBusy,setMapImportBusy]=useState(false);
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null);
+ const [offlineMapExpanded,setOfflineMapExpanded]=useState(false),[mapViewMode,setMapViewMode]=useState("2d");
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
  const [startPoint,setStartPoint]=useState(null);
@@ -1017,6 +1018,7 @@ async function locateRouteStops(){
    {id:"landuse",type:"fill",source:"uk","source-layer":"landuse",paint:{"fill-color":"#dce8d6","fill-opacity":0.8}},
    {id:"water",type:"fill",source:"uk","source-layer":"water",paint:{"fill-color":"#a9d4e8"}},
    {id:"buildings",type:"fill",source:"uk","source-layer":"buildings",minzoom:13,paint:{"fill-color":"#d5cfc4","fill-outline-color":"#c3bcae"}},
+   {id:"buildings-3d",type:"fill-extrusion",source:"uk","source-layer":"buildings",minzoom:14,layout:{"visibility":mapViewMode==="3d"?"visible":"none"},paint:{"fill-extrusion-color":"#c9bda9","fill-extrusion-height":["coalesce",["to-number",["get","render_height"]],["to-number",["get","height"]],["*",["to-number",["coalesce",["get","building:levels"],3]],3]],"fill-extrusion-base":0,"fill-extrusion-opacity":0.92,"fill-extrusion-vertical-gradient":true}},
    {id:"roads",type:"line",source:"uk","source-layer":"roads",paint:{"line-color":"#ffffff","line-width":["interpolate",["linear"],["zoom"],5,0.5,10,1.2,14,3,16,5],"line-opacity":0.95}},
    {id:"place-labels",type:"symbol",source:"uk","source-layer":"places",minzoom:5,layout:{"text-field":["coalesce",["get","name:en"],["get","name"]],"text-font":["Noto Sans Regular"],"text-size":["interpolate",["linear"],["zoom"],5,10,10,13,14,16],"text-max-width":8,"text-allow-overlap":false},paint:{"text-color":"#344b48","text-halo-color":"#ffffff","text-halo-width":1.5}},
    {id:"road-labels",type:"symbol",source:"uk","source-layer":"roads",minzoom:11,layout:{"symbol-placement":"line","text-field":["coalesce",["get","name:en"],["get","name"]],"text-font":["Noto Sans Regular"],"text-size":["interpolate",["linear"],["zoom"],11,10,14,12,17,14],"text-max-angle":30,"text-max-width":8,"text-keep-upright":true,"text-allow-overlap":false},paint:{"text-color":"#52615e","text-halo-color":"#ffffff","text-halo-width":1.5}}
@@ -1031,7 +1033,31 @@ async function locateRouteStops(){
  const distanceToNext=driverPosition&&nextOfflineStop&&nextOfflineStop.lat!=null&&nextOfflineStop.lon!=null?(()=>{const rad=v=>v*Math.PI/180;const dLat=rad(Number(nextOfflineStop.lat)-driverPosition.latitude),dLon=rad(Number(nextOfflineStop.lon)-driverPosition.longitude);const a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(Number(nextOfflineStop.lat)))*Math.sin(dLon/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));})():null;
  async function startOfflineRoute(){if(!offlineMapPath)return Alert.alert("Offline map required","Download or import the UK map first.");if(!stops.length)return Alert.alert("No stops","Import a delivery list first.");if(stops.some(x=>x.lat==null||x.lon==null))return Alert.alert("Locate stops first","Connect to the internet and find coordinates for every stop.");try{const p=await Location.requestForegroundPermissionsAsync();if(p.status!=="granted")return Alert.alert("Location permission needed","Allow location access while using Jett Pal.");const pos=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.Balanced});setDriverPosition(pos.coords);setOfflineNavActive(true);Alert.alert("Offline route started","Next stop: "+(nextOfflineStop?.name||nextOfflineStop?.address||"next delivery")+". This first stage shows straight-line distance, not road directions.");}catch(e){Alert.alert("Location unavailable",e.message||"Check that phone location is switched on.");}}
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));}
- const mapScreen=()=> <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
+ const offlineMapPanel=()=> <View style={offlineMapExpanded?{flex:1,backgroundColor:C.bg}:{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
+   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}
+    onWillStartLoadingMap={()=>setMapLoadStatus("Loading map style…")}
+    onDidFinishLoadingMap={()=>setMapLoadStatus("Map style loaded. Checking map tiles…")}
+    onDidFailLoadingMap={()=>setMapLoadStatus("Map style failed to load. Check that the imported map contains building and road layers.")}
+    onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
+    <MapCamera initialViewState={{center:mapCenter,zoom:mapZoom,pitch:mapViewMode==="3d"?55:0}}/>
+     <GeoJSONSource id="delivery-stops" data={{type:"FeatureCollection",features:stops.filter(x=>x.lat!=null&&x.lon!=null).map((stop,index)=>({type:"Feature",id:String(stop.id||index),properties:{order:String(index+1)},geometry:{type:"Point",coordinates:[Number(stop.lon),Number(stop.lat)]}}))}}>
+      <Layer id="delivery-stop-circles" type="circle" paint={{"circle-radius":15,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
+      <Layer id="delivery-stop-numbers" type="symbol" layout={{"text-field":["get","order"],"text-font":["Noto Sans Regular"],"text-size":12,"text-allow-overlap":true}} paint={{"text-color":"#062010"}}/>
+     </GeoJSONSource>
+     {driverPosition?<GeoJSONSource id="driver-location" data={{type:"Feature",geometry:{type:"Point",coordinates:[driverPosition.longitude,driverPosition.latitude]},properties:{}}}>
+      <Layer id="driver-location-halo" type="circle" paint={{"circle-radius":13,"circle-color":"#ffffff","circle-opacity":0.95}}/>
+      <Layer id="driver-location-dot" type="circle" paint={{"circle-radius":8,"circle-color":"#168cff","circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
+     </GeoJSONSource>:null}
+   </MapLibreMap>
+   <View style={{position:"absolute",top:10,left:10,right:10,flexDirection:"row",justifyContent:"space-between",alignItems:"center"}}>
+    <View style={{flexDirection:"row",backgroundColor:"rgba(4,16,25,0.92)",borderRadius:10,padding:4}}>
+     {["2d","3d"].map(mode=><TouchableOpacity key={mode} onPress={()=>setMapViewMode(mode)} style={{paddingHorizontal:15,paddingVertical:10,borderRadius:7,backgroundColor:mapViewMode===mode?C.green:"transparent"}}><Text style={{fontWeight:"900",color:mapViewMode===mode?"#062010":"#ffffff"}}>{mode.toUpperCase()}</Text></TouchableOpacity>)}
+    </View>
+    <TouchableOpacity onPress={()=>setOfflineMapExpanded(v=>!v)} style={{backgroundColor:"rgba(4,16,25,0.94)",paddingHorizontal:14,paddingVertical:11,borderRadius:9}}><Text style={{color:"#ffffff",fontWeight:"900"}}>{offlineMapExpanded?"CLOSE MAP":"⛶ ENLARGE"}</Text></TouchableOpacity>
+   </View>
+   <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus} · {mapViewMode.toUpperCase()} view</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>Building outlines appear where included in the offline map. 3D height depends on available building data.</Text></View>
+  </View>;
+ const mapScreen=()=> offlineMapExpanded?<View style={{flex:1,backgroundColor:C.bg}}>{offlineMapPanel()}</View>:<ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   <View style={s.card}>
    <Text style={s.cardTitle}>OFFLINE NAVIGATION — FIRST STAGE</Text>
    {offlineNavActive&&nextOfflineStop?<><Text style={s.resultTitle}>NEXT STOP: {nextOfflineStop.name||nextOfflineStop.address}</Text><Text style={s.small}>{[nextOfflineStop.town,nextOfflineStop.postcode].filter(Boolean).join(" ")}</Text><Text style={[s.greenText,{marginTop:8}]}>{distanceToNext!=null?distanceToNext.toFixed(1)+" km straight-line distance":"GPS position captured"}</Text><Text style={s.small}>This is GPS progress only. Offline road routing and turn-by-turn instructions are still being developed.</Text><Button title="Mark this stop complete" onPress={completeOfflineStop}/><Button title="Stop offline route" outline onPress={()=>setOfflineNavActive(false)}/></>:<><Text style={s.small}>Start a delivery session using your saved map and stop coordinates. GPS location can work without mobile data when location services are available.</Text><Button title="Start Offline Route" onPress={startOfflineRoute}/></>}
@@ -1054,20 +1080,7 @@ async function locateRouteStops(){
    <Button title={mapImportBusy?"Importing map…":"I already downloaded the map — Import file"} disabled={mapDownloadBusy||mapImportBusy} onPress={importOfflineUKMap} outline/>
    {offlineMapPath?<Text style={[s.greenText,{marginTop:8}]}>✓ UK offline map installed in Jett Pal</Text>:null}
   </View>
-  {offlineMapPath? <View style={{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
-   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}
-    onWillStartLoadingMap={()=>setMapLoadStatus("Loading map style…")}
-    onDidFinishLoadingMap={()=>setMapLoadStatus("Map style loaded. Checking map tiles…")}
-    onDidFailLoadingMap={()=>setMapLoadStatus("Map style failed to load. The diagnostic build has detected a map loading error.")}
-    onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
-    <MapCamera initialViewState={{center:mapCenter,zoom:mapZoom}}/>
-     <GeoJSONSource id="delivery-stops" data={{type:"FeatureCollection",features:stops.filter(x=>x.lat!=null&&x.lon!=null).map((stop,index)=>({type:"Feature",id:String(stop.id||index),properties:{order:String(index+1)},geometry:{type:"Point",coordinates:[Number(stop.lon),Number(stop.lat)]}}))}}>
-      <Layer id="delivery-stop-circles" type="circle" paint={{"circle-radius":15,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
-      <Layer id="delivery-stop-numbers" type="symbol" layout={{"text-field":["get","order"],"text-font":["Noto Sans Regular"],"text-size":12,"text-allow-overlap":true}} paint={{"text-color":"#062010"}}/>
-     </GeoJSONSource>
-   </MapLibreMap>
-   <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus}</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>© OpenStreetMap contributors · Quarry / Protomaps</Text></View>
-  </View>:<View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>Your UK map is ready to import</Text><Text style={s.small}>Once imported, Jett will display the saved UK map here.</Text></View>}
+  {offlineMapPath?offlineMapPanel():<View style={s.mapPlaceholder}><Text style={s.mapPin}>⌖</Text><Text style={s.cardTitle}>Your UK map is ready to import</Text><Text style={s.small}>Once imported, Jett will display the saved UK map here.</Text></View>}
   <Button title="Navigate — choose Google Maps or offline map" onPress={()=>{if(stops.length)openNavigation(stops[stops.length-1],stops);else Alert.alert("No stops","Add stops first.");}} outline/>
   {stops.map((x,i)=><Text key={x.id} style={s.feature}>{i+1}. {x.name} — {x.postcode||x.town}</Text>)}
  </ScrollView>;
