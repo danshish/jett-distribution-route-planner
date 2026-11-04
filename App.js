@@ -57,7 +57,7 @@ export default function App(){
  const [mapLoadStatus,setMapLoadStatus]=useState("Waiting for map to load…");
  const navigationCameraRef=useRef(null);
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[currentManeuverIndex,setCurrentManeuverIndex]=useState(0),[fullScreenNavigation,setFullScreenNavigation]=useState(false);
- const [navigationZoom,setNavigationZoom]=useState(20.5),[navigationPitch,setNavigationPitch]=useState(0),[snappedDriverPosition,setSnappedDriverPosition]=useState(null);
+ const [navigationZoom,setNavigationZoom]=useState(20.5),[navigationPitch,setNavigationPitch]=useState(60),[snappedDriverPosition,setSnappedDriverPosition]=useState(null);
  const [rerouting,setRerouting]=useState(false),[distanceToManeuver,setDistanceToManeuver]=useState(null);
  const lastRerouteAt=useRef(0);
  const lastSpokenManeuver=useRef(-1);
@@ -99,7 +99,7 @@ useEffect(() => {
  },[offlineNavActive]);
  useEffect(()=>{
   if(offlineNavActive&&driverPosition&&navigationCameraRef.current){
-   navigationCameraRef.current.easeTo({center:[(snappedDriverPosition||driverPosition).longitude,(snappedDriverPosition||driverPosition).latitude],zoom:navigationZoom,pitch:navigationPitch,duration:250});
+   const routePoint=offlineRouteCoordinates[Math.min(offlineRouteCoordinates.length-1,Math.max(0,offlineRouteCoordinates.findIndex(p=>Math.abs(p[1]-driverPosition.latitude)<0.0002&&Math.abs(p[0]-driverPosition.longitude)<0.0002)+1))];const fallbackBearing=routePoint?((Math.atan2(routePoint[0]-driverPosition.longitude,routePoint[1]-driverPosition.latitude)*180/Math.PI)+360)%360:0;const bearing=Number.isFinite(driverPosition.heading)&&driverPosition.heading>=0?driverPosition.heading:fallbackBearing;navigationCameraRef.current.easeTo({center:[(snappedDriverPosition||driverPosition).longitude,(snappedDriverPosition||driverPosition).latitude],zoom:navigationZoom,pitch:navigationPitch,bearing,duration:250});
   }
   if(offlineNavActive&&driverPosition&&offlineRouteCoordinates.length>1&&offlineDirections.length){
    const rad=v=>v*Math.PI/180;
@@ -1161,10 +1161,10 @@ async function locateRouteStops(){
   finally{setOfflineRouteBusy(false);}
  }
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));setOfflineNavActive(false);setOfflineRouteCoordinates([]);setOfflineDirections([]);}
- async function recenterNavigation(){try{let coords=driverPosition;if(!coords){const p=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.BestForNavigation||Location.Accuracy.High});coords=p.coords;setDriverPosition(coords);}setSnappedDriverPosition(null);setNavigationZoom(z=>Math.max(z,21));navigationCameraRef.current?.easeTo({center:[coords.longitude,coords.latitude],zoom:Math.max(navigationZoom,21),pitch:navigationPitch,duration:350});}catch(e){Alert.alert("Location unavailable",e?.message||"Check that location services are switched on.");}}
+ async function recenterNavigation(){try{let coords=driverPosition;if(!coords){const p=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.BestForNavigation||Location.Accuracy.High});coords=p.coords;setDriverPosition(coords);}setSnappedDriverPosition(null);setNavigationZoom(z=>Math.max(z,21));navigationCameraRef.current?.easeTo({center:[coords.longitude,coords.latitude],zoom:Math.max(navigationZoom,21),pitch:navigationPitch,bearing:Number.isFinite(coords.heading)&&coords.heading>=0?coords.heading:0,duration:350});}catch(e){Alert.alert("Location unavailable",e?.message||"Check that location services are switched on.");}}
  const mapScreen=()=> fullScreenNavigation&&offlineNavActive?<View style={{flex:1,backgroundColor:C.bg}}>
   <MapLibreMap style={{flex:1}} mapStyle={mapStyle}>
-   <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20.5}}/>
+   <MapCamera ref={navigationCameraRef} initialViewState={{center:driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter,zoom:20.5,pitch:60,bearing:driverPosition&&Number.isFinite(driverPosition.heading)&&driverPosition.heading>=0?driverPosition.heading:0}}/>
    {offlineRouteCoordinates.length>1?<GeoJSONSource id="fullscreen-offline-route" data={{type:"Feature",properties:{},geometry:{type:"LineString",coordinates:offlineRouteCoordinates}}}><Layer id="fullscreen-route-casing" type="line" paint={{"line-color":"#ffffff","line-width":10,"line-opacity":0.95}}/><Layer id="fullscreen-route-line" type="line" paint={{"line-color":"#087cf0","line-width":7,"line-opacity":1}}/></GeoJSONSource>:null}
    {(snappedDriverPosition||driverPosition)?<GeoJSONSource id="fullscreen-driver-position" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[(snappedDriverPosition||driverPosition).longitude,(snappedDriverPosition||driverPosition).latitude]}}}><Layer id="fullscreen-driver-halo" type="circle" paint={{"circle-radius":19,"circle-color":"#1687ff","circle-opacity":0.22}}/><Layer id="fullscreen-driver-dot" type="circle" paint={{"circle-radius":9,"circle-color":"#087cf0","circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
    {nextOfflineStop?<GeoJSONSource id="fullscreen-destination" data={{type:"Feature",properties:{},geometry:{type:"Point",coordinates:[Number(nextOfflineStop.lon),Number(nextOfflineStop.lat)]}}}><Layer id="fullscreen-destination-pin" type="circle" paint={{"circle-radius":12,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":3}}/></GeoJSONSource>:null}
@@ -1178,7 +1178,7 @@ async function locateRouteStops(){
    <TouchableOpacity onPress={recenterNavigation} accessibilityLabel="Centre map on my location" style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:C.green,fontSize:25,fontWeight:"900"}}>⌖</Text></TouchableOpacity>
    <TouchableOpacity onPress={()=>setNavigationZoom(z=>Math.min(22,z+0.5))} style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:"#fff",fontSize:28,fontWeight:"900"}}>+</Text></TouchableOpacity>
    <TouchableOpacity onPress={()=>setNavigationZoom(z=>Math.max(15,z-0.5))} style={{width:48,height:48,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center",justifyContent:"center"}}><Text style={{color:"#fff",fontSize:28,fontWeight:"900"}}>−</Text></TouchableOpacity>
-   <TouchableOpacity onPress={()=>setNavigationPitch(p=>p===0?50:0)} style={{padding:10,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center"}}><Text style={{color:C.green,fontWeight:"900"}}>{navigationPitch===0?"3D":"2D"}</Text></TouchableOpacity>
+   <TouchableOpacity onPress={()=>setNavigationPitch(p=>p===0?60:0)} style={{padding:10,backgroundColor:"rgba(6,21,29,0.94)",borderColor:C.green,borderWidth:1,borderRadius:12,alignItems:"center"}}><Text style={{color:C.green,fontWeight:"900"}}>{navigationPitch===0?"3D":"2D"}</Text></TouchableOpacity>
   </View>
   <View style={{position:"absolute",bottom:18,left:12,right:12,flexDirection:"row",gap:10}}>
    <TouchableOpacity onPress={()=>setFullScreenNavigation(false)} style={{flex:1,backgroundColor:C.panel,borderColor:C.green,borderWidth:1.5,borderRadius:13,padding:16,alignItems:"center"}}><Text style={{color:C.green,fontWeight:"900",fontSize:15}}>Back to Route Screen</Text></TouchableOpacity>
