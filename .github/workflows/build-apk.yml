@@ -36,7 +36,7 @@ jobs:
         run: npm install
 
       - name: Generate Android project
-        run: npx expo prebuild --platform android --no-install --non-interactive
+        run: CI=1 npx expo prebuild --platform android --no-install
 
       - name: Configure permanent Android signing key
         run: |
