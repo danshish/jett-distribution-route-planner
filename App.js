@@ -111,7 +111,7 @@ useEffect(() => {
    offlineDirections.forEach((item,index)=>{if(Number(item.beginShapeIndex||0)<=nearestIndex)activeIndex=index;});
    setCurrentManeuverIndex(activeIndex);
   }
- },[offlineNavActive,driverPosition,offlineRouteCoordinates,offlineDirections]);
+ },[offlineNavActive,driverPosition,offlineRouteCoordinates,offlineDirections,navigationZoom,navigationPitch,snappedDriverPosition]);
  useEffect(()=>{
   if(!offlineNavActive||!driverPosition||offlineRouteCoordinates.length<2||!offlineDirections.length)return;
   const rad=v=>v*Math.PI/180;
@@ -1128,9 +1128,11 @@ async function locateRouteStops(){
    {id:"earth",type:"fill",source:"uk","source-layer":"earth",paint:{"fill-color":"#e9eee8"}},
    {id:"landuse",type:"fill",source:"uk","source-layer":"landuse",paint:{"fill-color":"#dce8d6","fill-opacity":0.8}},
    {id:"water",type:"fill",source:"uk","source-layer":"water",paint:{"fill-color":"#a9d4e8"}},
-   {id:"buildings",type:"fill",source:"uk","source-layer":"buildings",minzoom:13,paint:{"fill-color":"#d5cfc4","fill-outline-color":"#c3bcae"}},
+   {id:"buildings",type:"fill",source:"uk","source-layer":"buildings",minzoom:13,paint:{"fill-color":"#d5cfc4","fill-outline-color":"#9f988d"}},
+   {id:"buildings-3d",type:"fill-extrusion",source:"uk","source-layer":"buildings",minzoom:15,paint:{"fill-extrusion-color":"#c7bca9","fill-extrusion-height":["interpolate",["linear"],["zoom"],15,0,16,["coalesce",["get","height"],8]],"fill-extrusion-base":["coalesce",["get","min_height"],0],"fill-extrusion-opacity":0.88}},
    {id:"roads",type:"line",source:"uk","source-layer":"roads",paint:{"line-color":"#ffffff","line-width":["interpolate",["linear"],["zoom"],5,0.5,10,1.2,14,3,16,5],"line-opacity":0.95}},
    {id:"place-labels",type:"symbol",source:"uk","source-layer":"places",minzoom:5,layout:{"text-field":["coalesce",["get","name:en"],["get","name"]],"text-font":["Noto Sans Regular"],"text-size":["interpolate",["linear"],["zoom"],5,10,10,13,14,16],"text-max-width":8,"text-allow-overlap":false},paint:{"text-color":"#344b48","text-halo-color":"#ffffff","text-halo-width":1.5}},
+   {id:"building-labels",type:"symbol",source:"uk","source-layer":"buildings",minzoom:17,layout:{"text-field":["coalesce",["get","addr:housenumber"],["get","name"]],"text-font":["Noto Sans Regular"],"text-size":10,"text-allow-overlap":false},paint:{"text-color":"#554d43","text-halo-color":"#ffffff","text-halo-width":1.2}},
    {id:"road-labels",type:"symbol",source:"uk","source-layer":"roads",minzoom:11,layout:{"symbol-placement":"line","text-field":["coalesce",["get","name:en"],["get","name"]],"text-font":["Noto Sans Regular"],"text-size":["interpolate",["linear"],["zoom"],11,10,14,12,17,14],"text-max-angle":30,"text-max-width":8,"text-keep-upright":true,"text-allow-overlap":false},paint:{"text-color":"#52615e","text-halo-color":"#ffffff","text-halo-width":1.5}}
   ]
  }:null;
