@@ -290,121 +290,107 @@ function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),ke
  function openCompletion(stop){setSelectedDeliveryId(stop.id);setDeliveryOutcome(stop.deliveryOutcome&&stop.deliveryOutcome!=="Pending"?stop.deliveryOutcome:"Delivered");setActualWheelieQty(String(stop.deliveredWheelieBins??stop.wheelieBins??0));setActualCaddyQty(String(stop.deliveredFoodCaddies??stop.foodCaddies??0));setDeliveryNotes(stop.deliveryNotes||"");setScreen("completion");setTab("Home");}
  function saveCompletion(){const bins=Math.max(0,parseInt(actualWheelieQty,10)||0),caddies=Math.max(0,parseInt(actualCaddyQty,10)||0);const selected=stops.find(x=>x.id===selectedDeliveryId);if(!selected)return Alert.alert("Delivery not found","Please return to the delivery list and try again.");if(bins>Number(selected.wheelieBins||0)||caddies>Number(selected.foodCaddies||0))return Alert.alert("Check quantities","The delivered quantity cannot be greater than the quantity required for this property.");const successful=deliveryOutcome==="Delivered"||deliveryOutcome==="Partially delivered";setStops(current=>current.map(x=>x.id===selectedDeliveryId?{...x,done:successful,deliveryOutcome,deliveredWheelieBins:successful?bins:0,deliveredFoodCaddies:successful?caddies:0,deliveryNotes:deliveryNotes.trim(),completedAt:successful?new Date().toISOString():null}:x));setScreen("deliveries");setTab("Home");Alert.alert("Delivery report saved","The property outcome and actual delivered quantities have been recorded.");}
 
+function parseDeliveryRows(rows,sourceName){
+  if(!Array.isArray(rows)||!rows.length)throw new Error("The selected "+sourceName+" is empty.");
+  const norm=v=>String(v||"").toLowerCase().trim().replace(/[^a-z0-9]+/g," ").replace(/\\s+/g," ");
+  const aliases={
+    address:["address","full address","delivery address","property address","house address","street address","address line 1","address line 1 delivery","address1","location","delivery location","property","destination","delivery point","site address","service address"],
+    house:["house number","house no","house name","building number","building name","house"],
+    street:["street","street name","road","thoroughfare"],
+    town:["town","city","post town","locality","district"],
+    postcode:["postcode","post code","postal code","zip","zip code"],
+    wheelieBins:["wheelie bins","wheelie bin","bin quantity","bin qty","bins","black bins","refuse bins"],
+    foodCaddies:["food caddies","food caddy","food waste caddies","caddies","caddy quantity","caddy qty"]
+  };
+  const headers=rows[0].map(norm);
+  const headerAliases=Object.values(aliases).flat();
+  const hasHeader=headers.some(h=>headerAliases.includes(h)||/address|delivery|property|destination|location/.test(h));
+  const headerRow=hasHeader?headers:[];
+  const findIndex=key=>headerRow.findIndex(h=>aliases[key].includes(h));
+  let addressIndex=findIndex("address");
+  if(addressIndex<0&&hasHeader){
+    addressIndex=headerRow.findIndex(h=>/address|delivery location|property|destination|location/.test(h));
+  }
+  const data=rows.slice(hasHeader?1:0);
+  // If the heading is unfamiliar, identify the most address-like data column
+  // by checking its values for UK postcodes and house/street patterns.
+  if(addressIndex<0&&data.length){
+    const postcodePattern=/\\b[A-Z]{1,2}\\d[A-Z\\d]?\\s*\\d[A-Z]{2}\\b/i;
+    const streetPattern=/\\b(road|rd|street|st|avenue|ave|close|cl|drive|dr|lane|ln|way|crescent|gardens|place|pl|court|ct|terrace|walk|rise|row)\\b/i;
+    let best={index:-1,score:0};
+    const width=Math.max(...data.map(row=>row.length),0);
+    for(let col=0;col<width;col++){
+      let score=0,nonEmpty=0;
+      for(const row of data.slice(0,100)){
+        const value=String(row[col]??"").trim();if(!value)continue;nonEmpty++;
+        if(postcodePattern.test(value))score+=3;
+        if(streetPattern.test(value))score+=2;
+        if(/^\\d+[A-Z]?(\\s|,)/i.test(value))score+=1;
+        if(value.includes(","))score+=1;
+      }
+      if(nonEmpty)score=score/nonEmpty;
+      if(score>best.score)best={index:col,score};
+    }
+    if(best.score>=1.5)addressIndex=best.index;
+  }
+  if(addressIndex<0)throw new Error("Jett could not identify the address column. Please add a column heading such as Address, Delivery Address or Property Address.");
+  const indexes=hasHeader?{
+    house:findIndex("house"),street:findIndex("street"),town:findIndex("town"),postcode:findIndex("postcode"),wheelieBins:findIndex("wheelieBins"),foodCaddies:findIndex("foodCaddies")
+  }:{house:-1,street:-1,town:-1,postcode:-1,wheelieBins:-1,foodCaddies:-1};
+  const imported=data.map((row,i)=>{
+    const cell=n=>indexes[n]>=0?String(row[indexes[n]]??"").trim():"";
+    const address=String(row[addressIndex]??"").trim()||[cell("house"),cell("street")].filter(Boolean).join(" ");
+    if(!address)return null;
+    const id=sourceName.toLowerCase().includes("google")?"sheets_":"import_";
+    return {id:id+Date.now()+"_"+i,key:id+Date.now()+"_"+i,name:address,address,town:cell("town"),postcode:cell("postcode").toUpperCase(),wheelieBins:Math.max(0,parseInt(cell("wheelieBins"),10)||0),foodCaddies:Math.max(0,parseInt(cell("foodCaddies"),10)||0),done:false};
+  }).filter(Boolean);
+  if(!imported.length)throw new Error("No addresses were found in the detected address column. Check the selected sheet and try again.");
+  return {stops:imported,columnName:hasHeader?(rows[0][addressIndex]||"Address column "+(addressIndex+1)):"Column "+(addressIndex+1)};
+}
+
 async function importDeliveryFile(){
   setBusy(true);
   try{
-    // Android file providers report Excel files with inconsistent MIME types.
-    // Use a broad picker filter, then validate the selected file ourselves.
-    const picked=await DocumentPicker.getDocumentAsync({
-      type:"*/*",
-      copyToCacheDirectory:true,
-      multiple:false
-    });
+    const picked=await DocumentPicker.getDocumentAsync({type:"*/*",copyToCacheDirectory:true,multiple:false});
     if(picked.canceled||!picked.assets?.length)return;
     const file=picked.assets[0];
     if(!file?.uri)throw new Error("Android did not provide a readable file location.");
     const fileName=String(file.name||"delivery-list").toLowerCase();
-    if(!/\.(xlsx|xls|csv)$/i.test(fileName)){
-      throw new Error("Please choose an Excel .xlsx/.xls file or a .csv file. The selected file was: "+(file.name||"unknown"));
-    }
+    if(!/\\.(xlsx|xls|csv)$/i.test(fileName))throw new Error("Please choose an Excel .xlsx/.xls file or a .csv file. The selected file was: "+(file.name||"unknown"));
     const base64=await FileSystem.readAsStringAsync(file.uri,{encoding:"base64"});
     if(!base64)throw new Error("The selected file appears to be empty or Android could not read it.");
     const workbook=XLSX.read(base64,{type:"base64"});
     const firstSheet=workbook.Sheets[workbook.SheetNames[0]];
     if(!firstSheet)throw new Error("The selected file has no worksheet.");
     const rows=XLSX.utils.sheet_to_json(firstSheet,{header:1,defval:"",raw:false});
-    if(!rows.length)throw new Error("The selected file is empty.");
-    const norm=v=>String(v||"").toLowerCase().trim().replace(/[^a-z0-9]+/g," ");
-    const aliases={
-      address:["address","full address","delivery address","property address","house address","street address","address line 1","address1","location"],
-      house:["house number","house no","house name","building number","building name","number"],
-      street:["street","street name","road","thoroughfare"],
-      town:["town","city","post town","locality","district"],
-      postcode:["postcode","post code","postal code","zip","zip code"],
-      wheelieBins:["wheelie bins","wheelie bin","bin quantity","bin qty","bins","black bins","refuse bins"],
-      foodCaddies:["food caddies","food caddy","food waste caddies","caddies","caddy quantity","caddy qty"]
-    };
-    const header=rows[0].map(norm);
-    const hasHeader=header.some(h=>Object.values(aliases).flat().includes(h));
-    const findIndex=key=>header.findIndex(h=>aliases[key].includes(h));
-    const indexes=hasHeader?{
-      address:findIndex("address"),house:findIndex("house"),street:findIndex("street"),town:findIndex("town"),postcode:findIndex("postcode"),wheelieBins:findIndex("wheelieBins"),foodCaddies:findIndex("foodCaddies")
-    }:{address:0,house:-1,street:-1,town:-1,postcode:-1,wheelieBins:-1,foodCaddies:-1};
-    const data=rows.slice(hasHeader?1:0);
-    const imported=data.map((row,i)=>{
-      const cell=n=>indexes[n]>=0?String(row[indexes[n]]??"").trim():"";
-      const house=cell("house"),street=cell("street");
-      const address=cell("address")||[house,street].filter(Boolean).join(" ");
-      const fallback=address||row.map(v=>String(v||"").trim()).filter(Boolean).join(", ");
-      if(!fallback)return null;
-      const id="import_"+Date.now()+"_"+i;
-      const townValue=cell("town"),postcodeValue=cell("postcode").toUpperCase();
-      return {id,key:id,name:fallback,address:fallback,town:townValue,postcode:postcodeValue,wheelieBins:Math.max(0,parseInt(cell("wheelieBins"),10)||0),foodCaddies:Math.max(0,parseInt(cell("foodCaddies"),10)||0),done:false};
-    }).filter(Boolean);
-    if(!imported.length)throw new Error("No delivery addresses were found. Check that your file has an Address column or address data in its first column.");
-    setStops(current=>[...current,...imported]);
-    setScreen("route");
-    setTab("Route");
-    Alert.alert("Delivery list imported",imported.length+" stops added from "+file.name+". Please check the addresses before navigating.");
-  }catch(error){
-    Alert.alert("Import failed",error?.message||"Jett could not read that file. Please try an Excel .xlsx or CSV .csv file.");
-  }finally{
-    setBusy(false);
-  }
+    const parsed=parseDeliveryRows(rows,file.name||"CSV / Excel file");
+    setStops(current=>[...current,...parsed.stops]);
+    setScreen("route");setTab("Route");
+    Alert.alert("Delivery list imported",parsed.stops.length+" stops added. Address column detected: "+parsed.columnName+". Please check the addresses before navigating.");
+  }catch(error){Alert.alert("Import failed",error?.message||"Jett could not read that file. Please try an Excel .xlsx or CSV .csv file.");}
+  finally{setBusy(false);}
 }
 
 async function importGoogleSheet(){
   const link=googleSheetUrl.trim();
   if(!link)return Alert.alert("Paste a Google Sheets link","Copy the sharing link from Google Sheets and paste it here.");
-  const match=link.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  const match=link.match(/\\/spreadsheets\\/d\\/([a-zA-Z0-9-_]+)/);
   if(!match)return Alert.alert("Invalid Google Sheets link","Paste a link copied from a Google Sheets spreadsheet.");
-  const sheetId=match[1];
-  const gidMatch=link.match(/[?&#]gid=(\d+)/);
-  const gid=gidMatch?gidMatch[1]:"0";
+  const sheetId=match[1],gidMatch=link.match(/[?&#]gid=(\\d+)/),gid=gidMatch?gidMatch[1]:"0";
   try{
     setBusy(true);
-    const url="https://docs.google.com/spreadsheets/d/"+sheetId+"/export?format=csv&gid="+gid;
-    const response=await fetch(url);
+    const response=await fetch("https://docs.google.com/spreadsheets/d/"+sheetId+"/export?format=csv&gid="+gid);
     const csv=await response.text();
-    if(!response.ok||!csv||csv.trim().startsWith("<!DOCTYPE")||csv.includes("accounts.google.com/ServiceLogin")){
-      throw new Error("Google could not provide this sheet. In Google Sheets, set Share → General access → Anyone with the link → Viewer, then copy the link again.");
-    }
+    if(!response.ok||!csv||csv.trim().startsWith("<!DOCTYPE")||csv.includes("accounts.google.com/ServiceLogin"))throw new Error("Google could not provide this sheet. In Google Sheets, set Share → General access → Anyone with the link → Viewer, then copy the link again.");
     const workbook=XLSX.read(csv,{type:"string"});
     const sheet=workbook.Sheets[workbook.SheetNames[0]];
     const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:"",raw:false});
-    if(!rows.length)throw new Error("The Google Sheet is empty.");
-    const norm=v=>String(v||"").toLowerCase().trim().replace(/[^a-z0-9]+/g," ");
-    const aliases={
-      address:["address","full address","delivery address","property address","house address","street address","address line 1","address1","location"],
-      house:["house number","house no","house name","building number","building name","number"],
-      street:["street","street name","road","thoroughfare"],
-      town:["town","city","post town","locality","district"],
-      postcode:["postcode","post code","postal code","zip","zip code"],
-      wheelieBins:["wheelie bins","wheelie bin","bin quantity","bin qty","bins","black bins","refuse bins"],
-      foodCaddies:["food caddies","food caddy","food waste caddies","caddies","caddy quantity","caddy qty"]
-    };
-    const header=rows[0].map(norm);
-    const hasHeader=header.some(h=>Object.values(aliases).flat().includes(h));
-    const findIndex=key=>header.findIndex(h=>aliases[key].includes(h));
-    const indexes=hasHeader?{address:findIndex("address"),house:findIndex("house"),street:findIndex("street"),town:findIndex("town"),postcode:findIndex("postcode"),wheelieBins:findIndex("wheelieBins"),foodCaddies:findIndex("foodCaddies")}:{address:0,house:-1,street:-1,town:-1,postcode:-1,wheelieBins:-1,foodCaddies:-1};
-    const imported=rows.slice(hasHeader?1:0).map((row,i)=>{
-      const cell=n=>indexes[n]>=0?String(row[indexes[n]]??"").trim():"";
-      const address=cell("address")||[cell("house"),cell("street")].filter(Boolean).join(" ");
-      const name=address||row.map(v=>String(v||"").trim()).filter(Boolean).join(", ");
-      if(!name)return null;
-      const id="sheets_"+Date.now()+"_"+i;
-      return {id,key:id,name,address:name,town:cell("town"),postcode:cell("postcode").toUpperCase(),wheelieBins:Math.max(0,parseInt(cell("wheelieBins"),10)||0),foodCaddies:Math.max(0,parseInt(cell("foodCaddies"),10)||0),done:false};
-    }).filter(Boolean);
-    if(!imported.length)throw new Error("No delivery addresses found. Add an Address column or put addresses in the first column.");
-    setStops(current=>[...current,...imported]);
-    setScreen("route");
-    setTab("Route");
-    Alert.alert("Google Sheet imported",imported.length+" delivery stops added. Please check the addresses before navigating.");
-  }catch(error){
-    Alert.alert("Google Sheets import failed",error.message||"Could not read this Google Sheet.");
-  }finally{
-    setBusy(false);
-  }
+    const parsed=parseDeliveryRows(rows,"Google Sheets");
+    setStops(current=>[...current,...parsed.stops]);
+    setScreen("route");setTab("Route");
+    Alert.alert("Google Sheet imported",parsed.stops.length+" delivery stops added. Address column detected: "+parsed.columnName+". Please check the addresses before navigating.");
+  }catch(error){Alert.alert("Google Sheets import failed",error.message||"Could not read this Google Sheet.");}
+  finally{setBusy(false);}
 }
 
  function saveRoute(){if(!stops.length)return Alert.alert("No stops","Add addresses before saving.");const item={id:Date.now().toString(),name:routeName,stops,miles,savedAt:new Date().toISOString()};const r=[item,...saved].slice(0,30);setSaved(r);AsyncStorage.setItem(ROUTES,JSON.stringify(r));Alert.alert("Route saved","Available offline on this phone.");}
