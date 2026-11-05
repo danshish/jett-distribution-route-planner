@@ -292,7 +292,7 @@ function add(){if(!chosen)return;setStops([...stops,{id:Date.now().toString(),ke
 
 function parseDeliveryRows(rows,sourceName){
   if(!Array.isArray(rows)||!rows.length)throw new Error("The selected "+sourceName+" is empty.");
-  const norm=v=>String(v||"").toLowerCase().trim().replace(/[^a-z0-9]+/g," ").replace(/\\s+/g," ");
+  const norm=v=>String(v||"").toLowerCase().trim().replace(/[^a-z0-9]+/g," ").replace(/\s+/g," ");
   const aliases={
     address:["address","full address","delivery address","property address","house address","street address","address line 1","address line 1 delivery","address1","location","delivery location","property","destination","delivery point","site address","service address"],
     house:["house number","house no","house name","building number","building name","house"],
@@ -315,8 +315,8 @@ function parseDeliveryRows(rows,sourceName){
   // If the heading is unfamiliar, identify the most address-like data column
   // by checking its values for UK postcodes and house/street patterns.
   if(addressIndex<0&&data.length){
-    const postcodePattern=/\\b[A-Z]{1,2}\\d[A-Z\\d]?\\s*\\d[A-Z]{2}\\b/i;
-    const streetPattern=/\\b(road|rd|street|st|avenue|ave|close|cl|drive|dr|lane|ln|way|crescent|gardens|place|pl|court|ct|terrace|walk|rise|row)\\b/i;
+    const postcodePattern=/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i;
+    const streetPattern=/\b(road|rd|street|st|avenue|ave|close|cl|drive|dr|lane|ln|way|crescent|gardens|place|pl|court|ct|terrace|walk|rise|row)\b/i;
     let best={index:-1,score:0};
     const width=Math.max(...data.map(row=>row.length),0);
     for(let col=0;col<width;col++){
@@ -325,7 +325,7 @@ function parseDeliveryRows(rows,sourceName){
         const value=String(row[col]??"").trim();if(!value)continue;nonEmpty++;
         if(postcodePattern.test(value))score+=3;
         if(streetPattern.test(value))score+=2;
-        if(/^\\d+[A-Z]?(\\s|,)/i.test(value))score+=1;
+        if(/^\d+[A-Z]?(\s|,)/i.test(value))score+=1;
         if(value.includes(","))score+=1;
       }
       if(nonEmpty)score=score/nonEmpty;
@@ -374,9 +374,9 @@ async function importDeliveryFile(){
 async function importGoogleSheet(){
   const link=googleSheetUrl.trim();
   if(!link)return Alert.alert("Paste a Google Sheets link","Copy the sharing link from Google Sheets and paste it here.");
-  const match=link.match(/\\/spreadsheets\\/d\\/([a-zA-Z0-9-_]+)/);
+  const match=link.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if(!match)return Alert.alert("Invalid Google Sheets link","Paste a link copied from a Google Sheets spreadsheet.");
-  const sheetId=match[1],gidMatch=link.match(/[?&#]gid=(\\d+)/),gid=gidMatch?gidMatch[1]:"0";
+  const sheetId=match[1],gidMatch=link.match(/[?&#]gid=(\d+)/),gid=gidMatch?gidMatch[1]:"0";
   try{
     setBusy(true);
     const response=await fetch("https://docs.google.com/spreadsheets/d/"+sheetId+"/export?format=csv&gid="+gid);
