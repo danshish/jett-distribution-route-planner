@@ -470,18 +470,19 @@ async function locateRouteStops(){
   const pending=stops.filter(x=>x.lat==null||x.lon==null);
   if(!pending.length)return Alert.alert("All stops located","Every delivery stop already has map coordinates.");
   if(!online)return Alert.alert("Internet needed","Connect to the internet once to locate these addresses. Saved coordinates will then work with your offline map.");
-  setBusy(true);let located=0,failed=0;let updated=[...stops];
+  setBusy(true);let located=0;const failures=[];let updated=[...stops];
   try{
    for(const stop of pending){
     const q=[stop.address||stop.name,stop.town,stop.postcode].filter(Boolean).join(", ");
     try{
-     const sr=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/search?q="+encodeURIComponent(q));const sd=await sr.json();const match=(sd.results||[]).find(x=>x.udprn);if(!sr.ok||!sd.success||!match)throw new Error("No address match");
-     const rr=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/resolve?udprn="+encodeURIComponent(String(match.udprn)));const rd=await rr.json();const a=rd.results?.[0];const lat=Number(a?.latitude),lon=Number(a?.longitude);if(!rr.ok||!rd.success||!Number.isFinite(lat)||!Number.isFinite(lon))throw new Error("No coordinates");
+     const sr=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/search?q="+encodeURIComponent(q));const sd=await sr.json();const match=(sd.results||[]).find(x=>x.udprn);if(!sr.ok||!sd.success||!match)throw new Error(sd.error||"No matching UK address found");
+     const rr=await fetch("https://jett-address-api.mrmagixtoyou.workers.dev/resolve?udprn="+encodeURIComponent(String(match.udprn)));const rd=await rr.json();const a=rd.results?.[0];const lat=Number(a?.latitude),lon=Number(a?.longitude);if(!rr.ok||!rd.success||!Number.isFinite(lat)||!Number.isFinite(lon))throw new Error(rd.error||"Address found, but coordinates were unavailable");
      updated=updated.map(x=>x.id===stop.id?{...x,lat,lon}:x);located++;
-    }catch{failed++;}
+    }catch(error){failures.push({address:q||stop.name||"Unnamed stop",reason:error?.message||"Address lookup failed"});}
    }
    setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));
-   Alert.alert("Address locating finished",located+" stops placed on the map"+(failed?", "+failed+" could not be matched.":"."));
+   const failureText=failures.length?"\n\nCould not locate:\n"+failures.map((x,i)=>(i+1)+". "+x.address+" — "+x.reason).join("\n"):"";
+   Alert.alert("Address locating finished",located+" stops placed on the map"+(failures.length?", "+failures.length+" could not be matched.":".")+failureText);
   }finally{setBusy(false);}
  }
 
@@ -581,7 +582,7 @@ async function locateRouteStops(){
    <Button title="Import Excel / CSV delivery sheet" onPress={importDeliveryFile} outline/>
    <TextInput style={s.input} value={googleSheetUrl} onChangeText={setGoogleSheetUrl} autoCapitalize="none" placeholder="Paste Google Sheets link" placeholderTextColor="#78939b"/>
    <Button title="Import Google Sheet" onPress={importGoogleSheet} outline/>
-   <View style={s.card}><Text style={s.cardTitle}>TODAY'S PROPERTIES</Text>{stops.length===0?<Text style={s.small}>No delivery jobs loaded yet. Import a spreadsheet or add addresses using House Finder.</Text>:stops.map((x,i)=><View key={x.id} style={s.stop}><View style={s.number}><Text style={s.numberText}>{i+1}</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.town} {x.postcode}</Text><Text style={s.small}>Wheelie bins: {Number(x.wheelieBins||0)} · Food caddies: {Number(x.foodCaddies||0)}</Text><Text style={[s.small,{color:x.done?C.green:C.orange}]}>{x.deliveryOutcome&&x.deliveryOutcome!=="Pending"?x.deliveryOutcome:(x.done?"✓ Delivered":"● Pending")}</Text>{x.deliveryNotes?<Text style={s.small}>Note: {x.deliveryNotes}</Text>:null}</View><TouchableOpacity onPress={()=>openCompletion(x)}><Text style={s.action}>{x.done?"REPORT":"DELIVERED"}</Text></TouchableOpacity></View>)}</View>
+   <View style={s.card}><Text style={s.cardTitle}>TODAY'S PROPERTIES</Text>{stops.length===0?<Text style={s.small}>No delivery jobs loaded yet. Import a spreadsheet or add addresses using House Finder.</Text>:stops.map((x,i)=><View key={x.id} style={s.stop}><View style={s.number}><Text style={s.numberText}>{i+1}</Text></View><View style={{flex:1}}><Text style={s.resultTitle}>{x.name}</Text><Text style={s.small}>{x.town} {x.postcode}</Text><Text style={s.small}>Wheelie bins: {Number(x.wheelieBins||0)} · Food caddies: {Number(x.foodCaddies||0)}</Text><Text style={[s.small,{color:x.done?C.green:C.orange}]}>{x.deliveryOutcome&&x.deliveryOutcome!=="Pending"?x.deliveryOutcome:(x.done?"✓ Delivered":"● Pending")}</Text>{x.deliveryNotes?<Text style={s.small}>Note: {x.deliveryNotes}</Text>:null}</View><TouchableOpacity onPress={()=>openCompletion(x)}><Text style={s.action}>{x.done?"REPORT":"UPDATE"}</Text></TouchableOpacity></View>)}</View>
    <Button title="Open Stock Control" onPress={()=>{setScreen("stock");setTab("Home");}}/>
    <Button title="Vehicle Defects & Incident Log" onPress={()=>{setScreen("defects");setTab("Home");}} outline/>
    <Button title="Vehicle Mileage & Fuel Log" onPress={()=>{setScreen("vehicleLog");setTab("Home");}} outline/>
