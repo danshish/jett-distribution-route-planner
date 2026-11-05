@@ -2,7 +2,7 @@
   "expo": {
     "name": "Jett Pal",
     "slug": "jett-distribution-route-planner",
-    "version": "3.6.7",
+    "version": "3.6.8",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./app-icon.png",
@@ -11,7 +11,7 @@
     ],
     "android": {
       "package": "com.jett.distribution.routeplanner",
-      "versionCode": 35
+      "versionCode": 36
     },
     "plugins": [
       "@maplibre/maplibre-react-native",
