@@ -59,6 +59,7 @@ export default function App(){
  const [offlineMapExpanded,setOfflineMapExpanded]=useState(false),[mapViewMode,setMapViewMode]=useState("2d");
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
+ const [routeGeoJSON,setRouteGeoJSON]=useState(null),[routeGeometryStatus,setRouteGeometryStatus]=useState("Route not calculated");
  const [startPoint,setStartPoint]=useState(null);
  const [startQuery,setStartQuery]=useState("");
  const [startResults,setStartResults]=useState([]);
@@ -1061,6 +1062,22 @@ async function locateRouteStops(){
  const nextOfflineStop=stops.find(x=>!x.done);
  const distanceToNext=driverPosition&&nextOfflineStop&&nextOfflineStop.lat!=null&&nextOfflineStop.lon!=null?(()=>{const rad=v=>v*Math.PI/180;const dLat=rad(Number(nextOfflineStop.lat)-driverPosition.latitude),dLon=rad(Number(nextOfflineStop.lon)-driverPosition.longitude);const a=Math.sin(dLat/2)**2+Math.cos(rad(driverPosition.latitude))*Math.cos(rad(Number(nextOfflineStop.lat)))*Math.sin(dLon/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));})():null;
  async function startOfflineRoute(){if(!offlineMapPath)return Alert.alert("Offline map required","Download or import the UK map first.");if(!stops.length)return Alert.alert("No stops","Import a delivery list first.");if(stops.some(x=>x.lat==null||x.lon==null))return Alert.alert("Locate stops first","Connect to the internet and find coordinates for every stop.");try{const p=await Location.requestForegroundPermissionsAsync();if(p.status!=="granted")return Alert.alert("Location permission needed","Allow location access while using Jett Pal.");const pos=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.High});if(pos.coords.accuracy&&pos.coords.accuracy>100)Alert.alert("GPS signal is weak","Move somewhere with a clearer view of the sky. Jett will keep trying to improve the GPS fix.");setDriverPosition(pos.coords);setGpsAccuracy(pos.coords.accuracy??null);setGpsSpeed(pos.coords.speed??null);setGpsHeading(pos.coords.heading>=0?pos.coords.heading:null);setOfflineNavActive(true);setOfflineMapExpanded(true);setTab("Map");setScreen("map");}catch(e){Alert.alert("Location unavailable",e.message||"Check that phone location is switched on.");}}
+ useEffect(()=>{let active=true;(async()=>{
+  const valid=stops.filter(x=>Number.isFinite(Number(x.lat))&&Number.isFinite(Number(x.lon)));
+  if(valid.length<2){setRouteGeoJSON(null);setRouteGeometryStatus("Need at least two located stops");return;}
+  const signature=valid.map(x=>x.id+":"+x.lat+","+x.lon).join("|");
+  try{const saved=await AsyncStorage.getItem("@jett_route_geojson");if(active&&saved){const parsed=JSON.parse(saved);if(parsed.signature===signature&&parsed.geometry){setRouteGeoJSON(parsed.geometry);setRouteGeometryStatus("Saved road route");}}}catch{}
+  if(!online){if(active)setRouteGeometryStatus("Offline — using saved route if available");return;}
+  try{
+   setRouteGeometryStatus("Calculating road route…");
+   const coords=valid.map(p=>Number(p.lon)+","+Number(p.lat)).join(";");
+   const response=await fetch("https://router.project-osrm.org/route/v1/driving/"+coords+"?overview=full&geometries=geojson&steps=true");
+   const data=await response.json();
+   if(!response.ok||data.code!=="Ok"||!data.routes?.[0]?.geometry?.coordinates?.length)throw new Error(data.message||"Road route unavailable");
+   const geometry={type:"Feature",properties:{},geometry:data.routes[0].geometry};
+   if(active){setRouteGeoJSON(geometry);setRouteGeometryStatus("Road route loaded");await AsyncStorage.setItem("@jett_route_geojson",JSON.stringify({signature,geometry}));}
+  }catch(error){if(active)setRouteGeometryStatus(error.message||"Could not calculate road route");}
+ })();return()=>{active=false;};},[stops,online]);
  useEffect(()=>{if(!offlineNavActive)return;let subscription=null;let active=true;(async()=>{try{subscription=await Location.watchPositionAsync({accuracy:Location.Accuracy.BestForNavigation,timeInterval:1000,distanceInterval:2},position=>{if(!active)return;const c=position.coords;if(!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude))return;if(c.accuracy!=null&&c.accuracy>80)return;setDriverPosition(c);setGpsAccuracy(c.accuracy??null);setGpsSpeed(c.speed!=null&&c.speed>=0?c.speed:null);setGpsHeading(c.heading!=null&&c.heading>=0?c.heading:null);});}catch(error){Alert.alert("Live GPS unavailable",error.message||"Jett could not start continuous location tracking.");setOfflineNavActive(false);}})();return()=>{active=false;if(subscription)subscription.remove();};},[offlineNavActive]);
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));}
  const offlineMapPanel=()=> <View style={offlineMapExpanded?{flex:1,backgroundColor:C.bg}:{height:470,borderRadius:15,overflow:"hidden",marginTop:12,borderWidth:1,borderColor:C.line}}>
@@ -1070,6 +1087,7 @@ async function locateRouteStops(){
     onDidFailLoadingMap={()=>setMapLoadStatus("Map style failed to load. Check that the imported map contains building and road layers.")}
     onDidFinishRenderingMapFully={()=>setMapLoadStatus("Map rendered successfully.")}>
     <MapCamera initialViewState={{center:mapCenter,zoom:mapZoom,pitch:mapViewMode==="3d"?55:0}} followUserLocation={offlineNavActive} followZoomLevel={17}/>
+     {routeGeoJSON?<GeoJSONSource id="delivery-road-route" data={routeGeoJSON}><Layer id="delivery-road-route-casing" type="line" layout={{"line-cap":"round","line-join":"round"}} paint={{"line-color":"#ffffff","line-width":8,"line-opacity":0.95}}/><Layer id="delivery-road-route-line" type="line" layout={{"line-cap":"round","line-join":"round"}} paint={{"line-color":"#0878ff","line-width":5,"line-opacity":0.98}}/></GeoJSONSource>:null}
      <GeoJSONSource id="delivery-stops" data={{type:"FeatureCollection",features:stops.filter(x=>x.lat!=null&&x.lon!=null).map((stop,index)=>({type:"Feature",id:String(stop.id||index),properties:{order:String(index+1)},geometry:{type:"Point",coordinates:[Number(stop.lon),Number(stop.lat)]}}))}}>
       <Layer id="delivery-stop-circles" type="circle" paint={{"circle-radius":15,"circle-color":C.green,"circle-stroke-color":"#ffffff","circle-stroke-width":2}}/>
       <Layer id="delivery-stop-numbers" type="symbol" layout={{"text-field":["get","order"],"text-font":["Noto Sans Regular"],"text-size":12,"text-allow-overlap":true}} paint={{"text-color":"#062010"}}/>
@@ -1086,7 +1104,7 @@ async function locateRouteStops(){
     </View>
     <TouchableOpacity onPress={()=>setOfflineMapExpanded(v=>!v)} style={{backgroundColor:"rgba(4,16,25,0.94)",paddingHorizontal:14,paddingVertical:11,borderRadius:9}}><Text style={{color:"#ffffff",fontWeight:"900"}}>{offlineMapExpanded?"CLOSE MAP":"⛶ ENLARGE"}</Text></TouchableOpacity>
    </View>
-   <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus} · {mapViewMode.toUpperCase()} view</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>Building outlines appear where included in the offline map. 3D height depends on available building data.</Text></View>
+   <View style={{position:"absolute",left:8,right:8,bottom:8,backgroundColor:"rgba(255,255,255,0.94)",paddingHorizontal:8,paddingVertical:7,borderRadius:6}}><Text style={{fontSize:10,color:"#18313a"}}>{mapLoadStatus} · {mapViewMode.toUpperCase()} view · {routeGeometryStatus}</Text><Text style={{fontSize:9,color:"#18313a",marginTop:3}}>Building outlines appear where included in the offline map. 3D height depends on available building data.</Text></View>
   </View>;
  const mapScreen=()=> offlineMapExpanded?<View style={{flex:1,backgroundColor:C.bg}}>{offlineMapPanel()}</View>:<ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Jett Offline UK Map</Text>
   <View style={s.card}>
