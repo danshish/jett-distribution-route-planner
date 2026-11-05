@@ -356,7 +356,7 @@ async function importDeliveryFile(){
     const file=picked.assets[0];
     if(!file?.uri)throw new Error("Android did not provide a readable file location.");
     const fileName=String(file.name||"delivery-list").toLowerCase();
-    if(!/\\.(xlsx|xls|csv)$/i.test(fileName))throw new Error("Please choose an Excel .xlsx/.xls file or a .csv file. The selected file was: "+(file.name||"unknown"));
+    if(!/\.(xlsx|xls|csv)$/i.test(fileName))throw new Error("Please choose an Excel .xlsx/.xls file or a .csv file. The selected file was: "+(file.name||"unknown"));
     const base64=await FileSystem.readAsStringAsync(file.uri,{encoding:"base64"});
     if(!base64)throw new Error("The selected file appears to be empty or Android could not read it.");
     const workbook=XLSX.read(base64,{type:"base64"});
