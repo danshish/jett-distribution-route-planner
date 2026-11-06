@@ -21,4 +21,5 @@ dependencies {
   implementation 'io.github.rallista:valhalla-models:0.1.1'
   implementation 'io.github.rallista:valhalla-models-config:0.1.1'
   implementation 'com.stadiamaps:osrm-openapi:0.0.10'
+  implementation 'com.squareup.moshi:moshi-kotlin:1.15.2'
 }
