@@ -1,7 +1,17 @@
-const { withAppBuildGradle } = require("@expo/config-plugins");
+const { withAppBuildGradle, withProjectBuildGradle } = require("@expo/config-plugins");
 
-// Isolated Valhalla dependency probe. Apply API 26 to the generated app module.
+// Isolated Valhalla dependency probe: align Kotlin with the library's 2.3.0 metadata.
 module.exports = function withValhallaDependencyProbe(config) {
+  config = withProjectBuildGradle(config, (config) => {
+    let contents = config.modResults.contents;
+    const marker = "classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')";
+    if (contents.includes(marker)) {
+      contents = contents.replace(marker, "classpath('org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0')");
+    }
+    config.modResults.contents = contents;
+    return config;
+  });
+
   return withAppBuildGradle(config, (config) => {
     let contents = config.modResults.contents;
     const dependencies = [
@@ -27,7 +37,6 @@ module.exports = function withValhallaDependencyProbe(config) {
     } else {
       contents = contents.replace(block, block.replace(/defaultConfig\s*\{/, "$&\n        minSdkVersion 26"));
     }
-
     config.modResults.contents = contents;
     return config;
   });
