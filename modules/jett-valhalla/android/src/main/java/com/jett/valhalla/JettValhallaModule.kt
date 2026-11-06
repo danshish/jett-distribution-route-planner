@@ -47,8 +47,6 @@ class JettValhallaModule : Module() {
         directionsOptions = DirectionsOptions(
           format = DirectionsOptions.Format.osrm,
           shapeFormat = DirectionsOptions.ShapeFormat.geojson,
-          units = DirectionsOptions.Units.mi,
-          language = "en-GB"
         )
       )
       when (val response = engine.route(request)) {
