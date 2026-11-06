@@ -9,6 +9,7 @@ import * as XLSX from "xlsx";
 import * as Location from "expo-location";
 import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import Svg, { Path } from "react-native-svg";
 import { Map as MapLibreMap, Camera as MapCamera, GeoJSONSource, Layer } from "@maplibre/maplibre-react-native";
 import { requireNativeModule } from "expo-modules-core";
@@ -63,6 +64,7 @@ export default function App(){
  const mapCameraRef=useRef(null);
  const lastRerouteAt=useRef(0),reroutingRef=useRef(false);
  const [offlineMapExpanded,setOfflineMapExpanded]=useState(false),[mapViewMode,setMapViewMode]=useState("2d");
+ useEffect(()=>{const tag="jett-full-offline-map";if(offlineMapExpanded){activateKeepAwakeAsync(tag).catch(error=>console.warn("Could not keep screen awake:",error));return()=>deactivateKeepAwake(tag);}return undefined;},[offlineMapExpanded]);
  const [navZoom,setNavZoom]=useState(19.2); const [mapZoomDelta,setMapZoomDelta]=useState(0);
  const [mapDownloadBusy,setMapDownloadBusy]=useState(false),[mapDownloadProgress,setMapDownloadProgress]=useState(0);
  const [roadMetrics,setRoadMetrics]=useState(null);
