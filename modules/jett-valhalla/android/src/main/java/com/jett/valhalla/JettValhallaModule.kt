@@ -24,9 +24,19 @@ class JettValhallaModule : Module() {
       if (coordinates.size < 2) {
         throw IllegalArgumentException("At least two route points are required.")
       }
-      val archive = File(archivePath)
+      // Expo FileSystem stores paths as file:// URIs. java.io.File(String) does not
+      // resolve that scheme, so a valid 2.88 GB archive appears to be missing.
+      val archive = if (archivePath.startsWith("file://")) {
+        File(android.net.Uri.parse(archivePath).path
+          ?: throw IllegalArgumentException("Invalid archive file URI."))
+      } else {
+        File(archivePath)
+      }
       if (!archive.exists() || !archive.isFile || archive.length() < 2_500_000_000L) {
-        throw IllegalArgumentException("The Valhalla TAR archive is missing or incomplete.")
+        throw IllegalArgumentException(
+          "Valhalla archive inaccessible: exists=${archive.exists()}, " +
+          "file=${archive.isFile}, bytes=${archive.length()}, path=${archive.absolutePath}"
+        )
       }
       val waypoints = coordinates.mapIndexed { index, point ->
         val lat = point["lat"] ?: throw IllegalArgumentException("Route point $index has no latitude.")
