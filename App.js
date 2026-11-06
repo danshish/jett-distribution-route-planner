@@ -1084,7 +1084,15 @@ async function locateRouteStops(){
   const valid=stops.filter(x=>Number.isFinite(Number(x.lat))&&Number.isFinite(Number(x.lon)));
   if(valid.length<1){setRouteGeoJSON(null);setRouteGeometryStatus("Add at least one located address");return;}
   let routePoints=valid;
-  if(valid.length===1){if(!offlineNavActive||!driverPosition){setRouteGeoJSON(null);setRouteGeometryStatus("Ready — start navigation to route from your GPS to this address");return;}routePoints=[{id:"current-gps",lat:driverPosition.latitude,lon:driverPosition.longitude},valid[0]];}
+  // During navigation, every route (including multi-stop routes) must begin at the live GPS fix.
+  // This changes the route signature so an older stop-to-stop cached route cannot be reused.
+  if(offlineNavActive&&driverPosition){
+   routePoints=[{id:"current-gps",lat:driverPosition.latitude,lon:driverPosition.longitude},...valid];
+  }else if(valid.length===1){
+   setRouteGeoJSON(null);
+   setRouteGeometryStatus("Ready — start navigation to route from your GPS to this address");
+   return;
+  }
   const signature=routePoints.map(x=>x.id+":"+Number(x.lat).toFixed(5)+","+Number(x.lon).toFixed(5)).join("|");
   try{const saved=await AsyncStorage.getItem("@jett_route_geojson");if(active&&saved){const parsed=JSON.parse(saved);if(parsed.signature===signature&&parsed.geometry){setRouteGeoJSON(parsed.geometry);setRouteSteps(Array.isArray(parsed.steps)?parsed.steps:[]);setRouteGeometryStatus("Saved road route");return;}}}catch{}
   if(!online){
