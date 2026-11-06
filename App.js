@@ -11,6 +11,9 @@ import * as Sharing from "expo-sharing";
 import * as ImagePicker from "expo-image-picker";
 import Svg, { Path } from "react-native-svg";
 import { Map as MapLibreMap, Camera as MapCamera, GeoJSONSource, Layer } from "@maplibre/maplibre-react-native";
+import { requireNativeModule } from "expo-modules-core";
+
+const JettValhalla = requireNativeModule("JettValhalla");
 
 const logo = <Image source={require("./app-icon.png")} style={{width:42,height:42,borderRadius:21,marginRight:8}} />;
 const C={bg:"#06151d",panel:"#0b2631",panel2:"#103540",green:"#27c653",green2:"#7ad64f",text:"#f4fbf6",muted:"#9bb2b9",line:"#1a414a",blue:"#38a4ff",orange:"#ffad42",red:"#ff5367"};
@@ -1084,7 +1087,19 @@ async function locateRouteStops(){
   if(valid.length===1){if(!offlineNavActive||!driverPosition){setRouteGeoJSON(null);setRouteGeometryStatus("Ready — start navigation to route from your GPS to this address");return;}routePoints=[{id:"current-gps",lat:driverPosition.latitude,lon:driverPosition.longitude},valid[0]];}
   const signature=routePoints.map(x=>x.id+":"+Number(x.lat).toFixed(5)+","+Number(x.lon).toFixed(5)).join("|");
   try{const saved=await AsyncStorage.getItem("@jett_route_geojson");if(active&&saved){const parsed=JSON.parse(saved);if(parsed.signature===signature&&parsed.geometry){setRouteGeoJSON(parsed.geometry);setRouteSteps(Array.isArray(parsed.steps)?parsed.steps:[]);setRouteGeometryStatus("Saved road route");return;}}}catch{}
-  if(!online){if(active)setRouteGeometryStatus("Offline — using saved route if available");return;}
+  if(!online){
+   if(!valhallaArchivePath){if(active)setRouteGeometryStatus("Offline — import the Valhalla routing archive to calculate a new road route");return;}
+   try{
+    if(active)setRouteGeometryStatus("Calculating offline Valhalla road route…");
+    const raw=await JettValhalla.route(valhallaArchivePath,routePoints.map(p=>({lat:Number(p.lat),lon:Number(p.lon)})));
+    const data=typeof raw==="string"?JSON.parse(raw):raw;
+    if(!data||data.code!=="Ok"||!data.routes?.[0]?.geometry?.coordinates?.length)throw new Error(data?.message||"Valhalla could not calculate a road route");
+    const geometry={type:"Feature",properties:{},geometry:data.routes[0].geometry};
+    const steps=(data.routes[0].legs||[]).flatMap(leg=>(leg.steps||[]).map(step=>({instruction:[step.maneuver?.modifier,step.name].filter(Boolean).join(" onto ")||step.maneuver?.type||"Continue",type:step.maneuver?.type||"turn",modifier:step.maneuver?.modifier||"",distance:Number(step.distance)||0,location:step.maneuver?.location||null}))).filter(step=>step.location);
+    if(active){setRouteGeoJSON(geometry);setRouteSteps(steps);setRouteGeometryStatus("Offline Valhalla road route loaded");await AsyncStorage.setItem("@jett_route_geojson",JSON.stringify({signature,geometry,steps}));}
+   }catch(error){if(active)setRouteGeometryStatus("Offline routing failed — "+(error.message||"check the Valhalla archive"));}
+   return;
+  }
   try{
    setRouteGeometryStatus("Calculating road route…");
    const coords=routePoints.map(p=>Number(p.lon)+","+Number(p.lat)).join(";");
@@ -1095,7 +1110,7 @@ async function locateRouteStops(){
    const steps=(data.routes[0].legs||[]).flatMap(leg=>(leg.steps||[]).map(step=>({instruction:[step.maneuver?.modifier,step.name].filter(Boolean).join(" onto ")||step.maneuver?.type||"Continue",type:step.maneuver?.type||"turn",modifier:step.maneuver?.modifier||"",distance:Number(step.distance)||0,location:step.maneuver?.location||null}))).filter(step=>step.location);
    if(active){setRouteGeoJSON(geometry);setRouteSteps(steps);setRouteGeometryStatus("Road route loaded");await AsyncStorage.setItem("@jett_route_geojson",JSON.stringify({signature,geometry,steps}));}
   }catch(error){if(active)setRouteGeometryStatus(error.message||"Could not calculate road route");}
- })();return()=>{active=false;};},[stops,online,offlineNavActive]);
+ })();return()=>{active=false;};},[stops,online,offlineNavActive,valhallaArchivePath]);
  async function rerouteFromPosition(position){
   if(!online||reroutingRef.current||!position)return;
   const now=Date.now();if(now-lastRerouteAt.current<20000)return;
