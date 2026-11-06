@@ -11,7 +11,8 @@
     ],
     "android": {
       "package": "com.jett.distribution.routeplanner",
-      "versionCode": 41
+      "versionCode": 41,
+      "minSdkVersion": 26
     },
     "plugins": [
       "@maplibre/maplibre-react-native",
