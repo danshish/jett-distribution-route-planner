@@ -7,10 +7,10 @@ def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.ab
 apply from: expoModulesCorePlugin
 applyKotlinExpoModulesCorePlugin()
 useCoreDependencies()
-useExpoPublishing()
 
 android {
   namespace "com.jett.valhalla"
+  compileSdkVersion rootProject.ext.compileSdkVersion
   defaultConfig {
     minSdkVersion 26
   }
