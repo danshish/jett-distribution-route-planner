@@ -1,0 +1,24 @@
+apply plugin: 'com.android.library'
+
+group = 'com.jett.valhalla'
+version = '1.0.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+
+android {
+  namespace "com.jett.valhalla"
+  defaultConfig {
+    minSdkVersion 26
+  }
+}
+
+dependencies {
+  implementation 'io.github.rallista:valhalla-mobile:0.5.1'
+  implementation 'io.github.rallista:valhalla-models:0.1.1'
+  implementation 'io.github.rallista:valhalla-models-config:0.1.1'
+  implementation 'com.stadiamaps:osrm-openapi:0.0.10'
+}
