@@ -15,7 +15,8 @@
     },
     "plugins": [
       "@maplibre/maplibre-react-native",
-      "./plugins/withAndroidSigning"
+      "./plugins/withAndroidSigning",
+      "./plugins/withValhallaDependencyProbe"
     ],
     "scheme": "jettpal"
   }
