@@ -1,6 +1,5 @@
 package com.jett.valhalla
 
-import com.facebook.react.bridge.Arguments
 import com.osrm.api.models.RouteResponse as OsrmRouteResponse
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
