@@ -62,7 +62,7 @@ export default function App(){
  const [mapCameraReady,setMapCameraReady]=useState(false);
  const [offlineNavActive,setOfflineNavActive]=useState(false),[driverPosition,setDriverPosition]=useState(null),[gpsAccuracy,setGpsAccuracy]=useState(null),[gpsSpeed,setGpsSpeed]=useState(null),[gpsHeading,setGpsHeading]=useState(null);
  const mapCameraRef=useRef(null);
- const lastRerouteAt=useRef(0),reroutingRef=useRef(false);
+ const lastRerouteAt=useRef(0),reroutingRef=useRef(false),offRouteSamples=useRef(0);
  const [offlineMapExpanded,setOfflineMapExpanded]=useState(false),[mapViewMode,setMapViewMode]=useState("2d");
  const [keepAwakeDuringNavigation,setKeepAwakeDuringNavigation]=useState(true);
  useEffect(()=>{AsyncStorage.getItem("@jett_keep_awake_navigation").then(value=>{if(value!==null)setKeepAwakeDuringNavigation(value==="true");}).catch(()=>{});},[]);
@@ -1127,27 +1127,35 @@ async function locateRouteStops(){
   }catch(error){if(active)setRouteGeometryStatus(error.message||"Could not calculate road route");}
  })();return()=>{active=false;};},[stops,online,offlineNavActive,valhallaArchivePath]);
  async function rerouteFromPosition(position){
-  if(!online||reroutingRef.current||!position)return;
+  if(reroutingRef.current||!position)return;
   const now=Date.now();if(now-lastRerouteAt.current<20000)return;
   const remaining=stops.filter(x=>!x.done&&Number.isFinite(Number(x.lat))&&Number.isFinite(Number(x.lon)));
   if(!remaining.length)return;
   reroutingRef.current=true;lastRerouteAt.current=now;setRouteGeometryStatus("Driver off route — recalculating…");
   try{
    const points=[{lat:position.latitude,lon:position.longitude},...remaining];
-   const coords=points.map(p=>Number(p.lon)+","+Number(p.lat)).join(";");
-   const response=await fetch("https://router.project-osrm.org/route/v1/driving/"+coords+"?overview=full&geometries=geojson&steps=true");
-   const data=await response.json();
-   if(!response.ok||data.code!=="Ok"||!data.routes?.[0]?.geometry?.coordinates?.length)throw new Error(data.message||"New road route unavailable");
+   let data;
+   if(!online){
+    if(!valhallaArchivePath)throw new Error("Offline Valhalla archive is not available");
+    const raw=await JettValhalla.route(valhallaArchivePath,points.map(p=>({lat:Number(p.lat),lon:Number(p.lon)})));
+    data=typeof raw==="string"?JSON.parse(raw):raw;
+   }else{
+    const coords=points.map(p=>Number(p.lon)+","+Number(p.lat)).join(";");
+    const response=await fetch("https://router.project-osrm.org/route/v1/driving/"+coords+"?overview=full&geometries=geojson&steps=true");
+    data=await response.json();
+    if(!response.ok)throw new Error(data.message||"New road route unavailable");
+   }
+   if(!data||data.code!=="Ok"||!data.routes?.[0]?.geometry?.coordinates?.length)throw new Error(data?.message||"New road route unavailable");
    const geometry={type:"Feature",properties:{},geometry:data.routes[0].geometry};
    const steps=(data.routes[0].legs||[]).flatMap(leg=>(leg.steps||[]).map(step=>({instruction:[step.maneuver?.modifier,step.name].filter(Boolean).join(" onto ")||step.maneuver?.type||"Continue",type:step.maneuver?.type||"turn",modifier:step.maneuver?.modifier||"",distance:Number(step.distance)||0,location:step.maneuver?.location||null}))).filter(step=>step.location);
-   setRouteGeoJSON(geometry);setRouteSteps(steps);setRouteGeometryStatus("Rerouted from current GPS position");
+   setRouteGeoJSON(geometry);setRouteSteps(steps);setRouteGeometryStatus(online?"Rerouted from current GPS position":"Rerouted offline with Valhalla");
    await AsyncStorage.setItem("@jett_route_geojson",JSON.stringify({signature:"live-reroute:"+points.map(p=>Number(p.lat).toFixed(5)+","+Number(p.lon).toFixed(5)).join("|"),geometry,steps}));
   }catch(error){setRouteGeometryStatus("Reroute failed — "+(error.message||"try again"));}
   finally{reroutingRef.current=false;}
  }
  useEffect(()=>{if(!driverPosition||!routeGeoJSON?.geometry?.coordinates?.length){setSnappedDriverPosition(null);return;}const coords=routeGeoJSON.geometry.coordinates;const lat0=driverPosition.latitude*Math.PI/180;const scaleX=111320*Math.cos(lat0),scaleY=110540;let best=null,bestDistance=Infinity;for(let i=0;i<coords.length-1;i++){const ax=(coords[i][0]-driverPosition.longitude)*scaleX,ay=(coords[i][1]-driverPosition.latitude)*scaleY,bx=(coords[i+1][0]-driverPosition.longitude)*scaleX,by=(coords[i+1][1]-driverPosition.latitude)*scaleY;const dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy;const t=len?Math.max(0,Math.min(1,-(ax*dx+ay*dy)/len)):0;const px=ax+t*dx,py=ay+t*dy,d=Math.hypot(px,py);if(d<bestDistance){bestDistance=d;best=[coords[i][0]+t*(coords[i+1][0]-coords[i][0]),coords[i][1]+t*(coords[i+1][1]-coords[i][1])];}}if(best&&bestDistance<=60)setSnappedDriverPosition({longitude:best[0],latitude:best[1]});else setSnappedDriverPosition(null);},[driverPosition,routeGeoJSON]);
  useEffect(()=>{if(!offlineNavActive||!mapCameraReady||!driverPosition)return;let first=null,second=null;const moveCamera=()=>{const camera=mapCameraRef.current;if(!camera||typeof camera.easeTo!=="function")return;try{camera.easeTo({center:[driverPosition.longitude,driverPosition.latitude],zoom:navZoom,bearing:gpsHeading!=null?gpsHeading:0,pitch:mapViewMode==="3d"?58:42,duration:700,easing:"ease"});}catch(error){console.warn("Jett offline navigation camera failed",error);}};first=setTimeout(moveCamera,350);second=setTimeout(moveCamera,1100);return()=>{if(first)clearTimeout(first);if(second)clearTimeout(second);};},[offlineNavActive,mapCameraReady,driverPosition,gpsHeading,mapViewMode,navZoom]);
- useEffect(()=>{if(!offlineNavActive)return;let subscription=null;let active=true;(async()=>{try{subscription=await Location.watchPositionAsync({accuracy:Location.Accuracy.BestForNavigation,timeInterval:1000,distanceInterval:2},position=>{if(!active)return;const c=position.coords;if(!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude))return;if(c.accuracy!=null&&c.accuracy>80)return;setDriverPosition(c);setGpsAccuracy(c.accuracy??null);setGpsSpeed(c.speed!=null&&c.speed>=0?c.speed:null);setGpsHeading(c.heading!=null&&c.heading>=0?c.heading:null);if(routeGeoJSON?.geometry?.coordinates?.length){const coords=routeGeoJSON.geometry.coordinates;let nearest=Infinity;for(const point of coords){const dx=(Number(point[0])-c.longitude)*111320*Math.cos(c.latitude*Math.PI/180),dy=(Number(point[1])-c.latitude)*110540;nearest=Math.min(nearest,Math.hypot(dx,dy));}if(nearest>80)rerouteFromPosition(c);}});}catch(error){Alert.alert("Live GPS unavailable",error.message||"Jett could not start continuous location tracking.");setOfflineNavActive(false);}})();return()=>{active=false;if(subscription)subscription.remove();};},[offlineNavActive,routeGeoJSON,stops,online]);
+ useEffect(()=>{if(!offlineNavActive)return;let subscription=null;let active=true;(async()=>{try{subscription=await Location.watchPositionAsync({accuracy:Location.Accuracy.BestForNavigation,timeInterval:1000,distanceInterval:2},position=>{if(!active)return;const c=position.coords;if(!Number.isFinite(c.latitude)||!Number.isFinite(c.longitude))return;if(c.accuracy!=null&&c.accuracy>80)return;setDriverPosition(c);setGpsAccuracy(c.accuracy??null);setGpsSpeed(c.speed!=null&&c.speed>=0?c.speed:null);setGpsHeading(c.heading!=null&&c.heading>=0?c.heading:null);if(routeGeoJSON?.geometry?.coordinates?.length){const coords=routeGeoJSON.geometry.coordinates;const scaleX=111320*Math.cos(c.latitude*Math.PI/180),scaleY=110540;let nearest=Infinity;for(let i=0;i<coords.length-1;i++){const ax=(Number(coords[i][0])-c.longitude)*scaleX,ay=(Number(coords[i][1])-c.latitude)*scaleY,bx=(Number(coords[i+1][0])-c.longitude)*scaleX,by=(Number(coords[i+1][1])-c.latitude)*scaleY,dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy,t=len?Math.max(0,Math.min(1,-(ax*dx+ay*dy)/len)):0;nearest=Math.min(nearest,Math.hypot(ax+t*dx,ay+t*dy));}if(nearest>65){offRouteSamples.current+=1;if(offRouteSamples.current>=3){offRouteSamples.current=0;rerouteFromPosition(c);}}else{offRouteSamples.current=0;}}});}catch(error){Alert.alert("Live GPS unavailable",error.message||"Jett could not start continuous location tracking.");setOfflineNavActive(false);}})();return()=>{active=false;if(subscription)subscription.remove();};},[offlineNavActive,routeGeoJSON,stops,online]);
  function changeMapZoom(delta){const next=offlineNavActive?Math.max(14,Math.min(21,navZoom+delta)):Math.max(3,Math.min(20,mapZoom+mapZoomDelta+delta));if(offlineNavActive)setNavZoom(next);else setMapZoomDelta(mapZoomDelta+delta);const center=offlineNavActive&&driverPosition?[driverPosition.longitude,driverPosition.latitude]:mapCenter;try{mapCameraRef.current?.easeTo({center,zoom:next,bearing:offlineNavActive&&gpsHeading!=null?gpsHeading:0,pitch:offlineNavActive?(mapViewMode==="3d"?58:42):(mapViewMode==="3d"?50:0),duration:350,easing:"ease"});}catch(error){console.warn("Map zoom control failed",error);}}
  async function recenterMap(){try{let position=driverPosition;if(!position){const fix=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.High});position=fix.coords;setDriverPosition(position);}mapCameraRef.current?.easeTo({center:[position.longitude,position.latitude],zoom:offlineNavActive?navZoom:Math.max(14,mapZoom+mapZoomDelta),bearing:offlineNavActive&&gpsHeading!=null?gpsHeading:0,pitch:offlineNavActive?(mapViewMode==="3d"?58:42):(mapViewMode==="3d"?50:0),duration:600,easing:"ease"});}catch(error){Alert.alert("Location unavailable",error.message||"Could not get your current GPS position.");}}
  async function completeOfflineStop(){const current=stops.find(x=>!x.done);if(!current)return;const updated=stops.map(x=>x.id===current.id?{...x,done:true}:x);setStops(updated);await AsyncStorage.setItem(CURRENT,JSON.stringify(updated));}
