@@ -599,6 +599,9 @@ async function locateRouteStops(){
     </View>
     <Image source={require("./jett-van.jpg")} style={s.dashboardHeroImage} resizeMode="cover"/>
    </View>
+   <TouchableOpacity activeOpacity={0.82} style={[s.dashboardNextStop,{borderColor:activeTimeEntry?C.green:C.line}]} onPress={()=>{setScreen("timeAttendance");setTab("Home");}}>
+    <View style={s.dashboardNextIcon}><Text style={s.dashboardNextIconText}>◷</Text></View><View style={{flex:1}}><Text style={s.dashboardNextEyebrow}>TIME & ATTENDANCE</Text><Text style={s.dashboardNextTitle}>{activeTimeEntry?"Shift timer · "+formatLiveTimer(Math.max(0,clockNow-new Date(activeTimeEntry.clockIn).getTime())):"Clock in / clock out"}</Text><Text style={s.dashboardNextSub}>Daily and weekly working hours</Text></View><Text style={s.dashboardToolArrow}>›</Text>
+   </TouchableOpacity>
    <View style={s.dashboardSectionHeader}>
     <View><Text style={s.dashboardSectionTitle}>Shift overview</Text><Text style={s.dashboardSectionSub}>Live delivery performance</Text></View>
     <Text style={s.dashboardSectionTag}>TODAY</Text>
@@ -657,9 +660,6 @@ async function locateRouteStops(){
      <View style={s.dashboardQuickIcon}><Text style={s.dashboardQuickIconText}>⌕</Text></View><Text style={s.dashboardQuickTitle}>House finder</Text><Text style={s.dashboardQuickSub}>Find UK addresses</Text><Text style={s.dashboardQuickArrow}>↗</Text>
     </TouchableOpacity>
    </View>
-   <TouchableOpacity activeOpacity={0.82} style={[s.dashboardNextStop,{borderColor:activeTimeEntry?C.green:C.line}]} onPress={()=>{setScreen("timeAttendance");setTab("Home");}}>
-    <View style={s.dashboardNextIcon}><Text style={s.dashboardNextIconText}>◷</Text></View><View style={{flex:1}}><Text style={s.dashboardNextEyebrow}>TIME & ATTENDANCE</Text><Text style={s.dashboardNextTitle}>{activeTimeEntry?"Shift timer · "+formatLiveTimer(Math.max(0,clockNow-new Date(activeTimeEntry.clockIn).getTime())):"Clock in / clock out"}</Text><Text style={s.dashboardNextSub}>Daily and weekly working hours</Text></View><Text style={s.dashboardToolArrow}>›</Text>
-   </TouchableOpacity>
    <View style={s.dashboardSectionHeader}>
     <View><Text style={s.dashboardSectionTitle}>More tools</Text><Text style={s.dashboardSectionSub}>Useful shortcuts</Text></View>
    </View>
