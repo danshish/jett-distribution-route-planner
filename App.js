@@ -787,9 +787,11 @@ async function locateRouteStops(){
   const unanswered=vehicleChecklistItems.filter(([key])=>!vehicleChecklistDraft[key]);
   if(unanswered.length)return Alert.alert("Checklist incomplete",`Please record a result for all ${unanswered.length} remaining item(s).`);
   const issues=vehicleChecklistItems.filter(([key])=>vehicleChecklistDraft[key]==="Issue").map(([key,label])=>label);
-  const record={items:{...vehicleChecklistDraft},issues,completedAt:new Date().toISOString(),driver:stockLoaded.driverSignoff?.name||""};
-  setStockLoaded(p=>({...p,vehicleChecklist:record}));
-  Alert.alert(issues.length?"Checklist saved — issues found":"Checklist complete",issues.length?`Recorded ${issues.length} item(s) needing attention. Log each safety fault in Vehicle Defects & Incident Log and do not use an unsafe vehicle.`:"All checklist items were marked OK.");
+  const driver=drivers.find(x=>x.id===activeDriverId)?.name||stockLoaded.driverSignoff?.name||profileName||"Driver";
+  const vehicle=drivers.find(x=>x.id===activeDriverId)?.vehicle||"Not allocated";
+  const record={id:Date.now().toString(),items:{...vehicleChecklistDraft},issues,completedAt:new Date().toISOString(),driver,vehicle};
+  setStockLoaded(p=>({...p,vehicleChecklist:record,vehicleChecklistHistory:[record,...(p.vehicleChecklistHistory||[])].slice(0,90)}));
+  Alert.alert(issues.length?"Checklist saved — issues found":"Checklist complete",issues.length?`Recorded ${issues.length} item(s) needing attention. Do not use a vehicle with a safety-critical defect. Log each fault and follow company procedures.`:"All checklist items were marked OK.");
  }
  const vehicleChecklistScreen=()=>{
   const saved=stockLoaded.vehicleChecklist;
@@ -804,8 +806,8 @@ async function locateRouteStops(){
     </View>)}
     <Button title="Save daily vehicle checklist" onPress={saveVehicleChecklist}/>
    </View>
-   <View style={s.card}><Text style={s.cardTitle}>LAST SAVED CHECK</Text>{saved?<><Text style={s.resultTitle}>{new Date(saved.completedAt).toLocaleString()}</Text><Text style={s.small}>{saved.issues?.length? `${saved.issues.length} item(s) marked Issue`:"No issues reported"}</Text>{saved.issues?.map((v,i)=><Text key={i} style={s.small}>• {v}</Text>)}</>:<Text style={s.small}>No checklist saved yet for this shift.</Text>}</View>
-   <Text style={s.foot}>If a safety-critical item fails, do not take the vehicle on the road until it has been assessed and made safe. Record faults in the Vehicle Defects & Incident Log and follow company procedures.</Text>
+   <View style={s.card}><Text style={s.cardTitle}>LAST SAVED CHECK</Text>{saved?<><Text style={s.resultTitle}>{new Date(saved.completedAt).toLocaleString()}</Text><Text style={s.small}>Driver: {saved.driver||"Not recorded"} · Vehicle: {saved.vehicle||"Not allocated"}</Text><Text style={s.small}>{saved.issues?.length?`${saved.issues.length} item(s) marked Issue`:"No issues reported"}</Text>{saved.issues?.map((v,i)=><Text key={i} style={s.small}>• {v}</Text>)}</>:<Text style={s.small}>No checklist saved yet.</Text>}</View>
+   <View style={s.card}><Text style={s.cardTitle}>CHECK HISTORY ({(stockLoaded.vehicleChecklistHistory||[]).length})</Text>{(stockLoaded.vehicleChecklistHistory||[]).length?(stockLoaded.vehicleChecklistHistory||[]).slice(0,10).map(item=><View key={item.id} style={{paddingVertical:10,borderBottomWidth:1,borderBottomColor:C.line}}><Text style={s.resultTitle}>{new Date(item.completedAt).toLocaleString()}</Text><Text style={s.small}>{item.driver||"Driver"} · {item.vehicle||"Vehicle not allocated"}</Text><Text style={[s.small,{color:item.issues?.length?C.orange:C.green}]}>{item.issues?.length?`${item.issues.length} issue(s): ${item.issues.join(", ")}`:"All checks passed"}</Text></View>):<Text style={s.small}>Completed checks will appear here. The latest 90 are retained on this phone.</Text>}</View>   <Text style={s.foot}>If a safety-critical item fails, do not take the vehicle on the road until it has been assessed and made safe. Record faults in the Vehicle Defects & Incident Log and follow company procedures.</Text>
    <Button title="Open Vehicle Defects & Incident Log" outline onPress={()=>setScreen("defects")}/><Button title="Back to Home" outline onPress={()=>{setScreen("home");setTab("Home");}}/>
   </ScrollView>;
  };
