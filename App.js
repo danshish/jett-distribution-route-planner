@@ -454,10 +454,11 @@ async function importGoogleSheet(){
  async function optimise(){
   if(!online)return Alert.alert("Internet required","Connect to the internet to calculate real road routes.");
   if(stops.length<2)return Alert.alert("Add more stops","Add at least two delivery stops to optimise.");
-  if(stops.some(x=>!cache[x.key]||!Number.isFinite(Number(cache[x.key].lat))||!Number.isFinite(Number(cache[x.key].lon))))return Alert.alert("Find locations first","Search each delivery address while online so Jett has coordinates for every stop.");
+  const locatedStops=stops.map(stop=>{const cached=cache[stop.key]||{};const lat=Number.isFinite(Number(stop.lat))?Number(stop.lat):Number(cached.lat);const lon=Number.isFinite(Number(stop.lon))?Number(stop.lon):Number(cached.lon);return {...stop,lat,lon};});
+  if(locatedStops.some(x=>!Number.isFinite(x.lat)||!Number.isFinite(x.lon)))return Alert.alert("Find locations first","One or more delivery stops still need coordinates. Connect to the internet and locate the missing addresses.");
   setBusy(true);
   try{
-    const points=startPoint?[startPoint,...stops.map(x=>cache[x.key])]:stops.map(x=>cache[x.key]);
+    const points=startPoint?[startPoint,...locatedStops.map(x=>({lat:x.lat,lon:x.lon}))]:locatedStops.map(x=>({lat:x.lat,lon:x.lon}));
     const stopOffset=startPoint?1:0;
     const coordinates=points.map(p=>Number(p.lon)+","+Number(p.lat)).join(";");
     const roundtrip=returnToStart?"true":"false";
@@ -466,7 +467,7 @@ async function importGoogleSheet(){
     const response=await fetch(url);
     const data=await response.json();
     if(!response.ok||data.code!=="Ok"||!data.trips?.length||!data.waypoints?.length)throw new Error(data.message||"The road-routing service could not calculate this route.");
-    const ordered=[...data.waypoints].map((w,i)=>({w,i})).sort((a,b)=>a.w.waypoint_index-b.w.waypoint_index).map(x=>x.i).filter(i=>i>=stopOffset).map(i=>stops[i-stopOffset]);
+    const ordered=[...data.waypoints].map((w,i)=>({w,i})).sort((a,b)=>a.w.waypoint_index-b.w.waypoint_index).map(x=>x.i).filter(i=>i>=stopOffset).map(i=>locatedStops[i-stopOffset]);
     if(ordered.length!==stops.length)throw new Error("The routing service returned an incomplete stop order.");
     const trip=data.trips[0],signature=ordered.map(x=>x.id).join("|")+"|"+(startPoint?.key||"first-stop")+"|"+(returnToStart?"return":"one-way");
     const metrics={signature,miles:trip.distance/1609.344,minutes:Math.round(trip.duration/60)};
