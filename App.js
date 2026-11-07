@@ -546,6 +546,7 @@ async function locateRouteStops(){
  const Button=({title,onPress,outline=false,disabled=false})=><TouchableOpacity accessibilityRole="button" accessibilityState={{disabled}} disabled={disabled} onPress={onPress} activeOpacity={0.82} style={[s.button,outline&&s.outline,disabled&&s.buttonDisabled]}><Text style={[s.buttonText,outline&&s.outlineText,disabled&&s.buttonTextDisabled]}>{title}</Text></TouchableOpacity>;
  const Nav=()=> <View style={s.nav}>{[["Home","⌂","home"],["Deliveries","▣","deliveries"],["Route","↝","route"],["Map","⌖","map"],["Reports","▥","performance"],["Settings","⚙","settings"]].map(([t,i,target])=><TouchableOpacity key={t} accessibilityRole="button" accessibilityState={{selected:tab===t}} activeOpacity={0.78} style={s.navItem} onPress={()=>{setTab(t);setScreen(target);}}><View style={[s.navIconWrap,tab===t&&s.navIconWrapActive]}><Text style={[s.navIcon,tab===t&&s.active]}>{i}</Text></View><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78} style={[s.navLabel,tab===t&&s.active]}>{t}</Text></TouchableOpacity>)}</View>;
  function formatWorkedTime(ms){const total=Math.max(0,Math.floor(ms/60000));return Math.floor(total/60)+"h "+String(total%60).padStart(2,"0")+"m";}
+ function formatLiveTimer(ms){const seconds=Math.max(0,Math.floor(ms/1000));return String(Math.floor(seconds/3600)).padStart(2,"0")+":"+String(Math.floor(seconds%3600/60)).padStart(2,"0")+":"+String(seconds%60).padStart(2,"0");}
  function clockIn(){if(!timeClockReady)return Alert.alert("Please wait","Time records are still loading.");if(activeTimeEntry)return Alert.alert("Already clocked in","Your shift timer is already running.");const now=new Date().toISOString();const driver=drivers.find(x=>x.id===activeDriverId);setActiveTimeEntry({id:String(Date.now()),clockIn:now,driverName:driver?.name||profileName||authSession?.user?.user_metadata?.full_name||driverName||"Driver"});Alert.alert("Clocked in","Your shift timer has started.");}
  function clockOut(){if(!activeTimeEntry)return;const end=new Date().toISOString();const entry={...activeTimeEntry,clockOut:end,durationMs:Math.max(0,new Date(end).getTime()-new Date(activeTimeEntry.clockIn).getTime())};setTimeEntries(previous=>[entry,...previous].slice(0,500));setActiveTimeEntry(null);Alert.alert("Clocked out","Your shift has been saved: "+formatWorkedTime(entry.durationMs)+".");}
  const timeAttendanceScreen=()=>{
@@ -555,7 +556,7 @@ async function locateRouteStops(){
   const todayMs=totalInRange(startOfDay,startOfDay+86400000),weekMs=totalInRange(monday.getTime(),monday.getTime()+7*86400000),liveMs=activeTimeEntry?Math.max(0,clockNow-new Date(activeTimeEntry.clockIn).getTime()):0;
   return <ScrollView contentContainerStyle={s.content}><Header/><Text style={s.title}>Time & Attendance</Text><Text style={s.small}>Clock your shift and keep track of your working hours.</Text>
    <View style={[s.card,{borderColor:activeTimeEntry?C.green:C.line,borderWidth:1.5}]}>
-    <Text style={s.cardTitle}>{activeTimeEntry?"SHIFT IN PROGRESS":"SHIFT NOT STARTED"}</Text><Text style={{fontSize:40,fontWeight:"900",color:C.text,fontVariant:["tabular-nums"],marginTop:12}}>{activeTimeEntry?formatWorkedTime(liveMs):"00h 00m"}</Text>
+    <Text style={s.cardTitle}>{activeTimeEntry?"SHIFT IN PROGRESS":"SHIFT NOT STARTED"}</Text><Text style={{fontSize:40,fontWeight:"900",color:C.text,fontVariant:["tabular-nums"],marginTop:12}}>{activeTimeEntry?formatLiveTimer(liveMs):"00:00:00"}</Text>
     <Text style={s.small}>{activeTimeEntry?"Clocked in at "+new Date(activeTimeEntry.clockIn).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})+" · "+(activeTimeEntry.driverName||"Driver"):"Clock in when you are ready to start work."}</Text><View style={{marginTop:16}}><Button title={activeTimeEntry?"CLOCK OUT":"CLOCK IN"} onPress={activeTimeEntry?clockOut:clockIn}/></View>
     {activeTimeEntry?<Text style={[s.greenText,{marginTop:8}]}>● Timer running · saved automatically on this phone</Text>:null}
    </View>
@@ -564,7 +565,7 @@ async function locateRouteStops(){
    <Text style={s.foot}>Hours use this phone's local clock. Records are stored on this device and are not yet synced to the office or payroll system.</Text><Button title="Back to Home" outline onPress={()=>{setScreen("home");setTab("Home");}}/>
   </ScrollView>;
  };
- const home= {
+ const home=()=>{
   const completed=stops.filter(x=>x.done).length;
   const visited=stops.filter(x=>x.deliveryOutcome&&x.deliveryOutcome!=="Pending").length;
   const unsuccessful=stops.filter(x=>x.deliveryOutcome&&x.deliveryOutcome!=="Pending"&&!x.done).length;
@@ -657,7 +658,7 @@ async function locateRouteStops(){
     </TouchableOpacity>
    </View>
    <TouchableOpacity activeOpacity={0.82} style={[s.dashboardNextStop,{borderColor:activeTimeEntry?C.green:C.line}]} onPress={()=>{setScreen("timeAttendance");setTab("Home");}}>
-    <View style={s.dashboardNextIcon}><Text style={s.dashboardNextIconText}>◷</Text></View><View style={{flex:1}}><Text style={s.dashboardNextEyebrow}>TIME & ATTENDANCE</Text><Text style={s.dashboardNextTitle}>{activeTimeEntry?"Shift timer · "+formatWorkedTime(Math.max(0,clockNow-new Date(activeTimeEntry.clockIn).getTime())):"Clock in / clock out"}</Text><Text style={s.dashboardNextSub}>Daily and weekly working hours</Text></View><Text style={s.dashboardToolArrow}>›</Text>
+    <View style={s.dashboardNextIcon}><Text style={s.dashboardNextIconText}>◷</Text></View><View style={{flex:1}}><Text style={s.dashboardNextEyebrow}>TIME & ATTENDANCE</Text><Text style={s.dashboardNextTitle}>{activeTimeEntry?"Shift timer · "+formatLiveTimer(Math.max(0,clockNow-new Date(activeTimeEntry.clockIn).getTime())):"Clock in / clock out"}</Text><Text style={s.dashboardNextSub}>Daily and weekly working hours</Text></View><Text style={s.dashboardToolArrow}>›</Text>
    </TouchableOpacity>
    <View style={s.dashboardSectionHeader}>
     <View><Text style={s.dashboardSectionTitle}>More tools</Text><Text style={s.dashboardSectionSub}>Useful shortcuts</Text></View>
